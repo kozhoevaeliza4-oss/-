@@ -1,0 +1,19 @@
+{
+  "name": "nurzaman-deal-form",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Оформление сделки Nurzaman: форма заявки, список, экспорт в Excel, автораспознавание ID-документов",
+  "main": "server/src/server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server/src/server.js",
+    "dev": "node --watch server/src/server.js",
+    "test": "node --test server/test/*.test.js"
+  },
+  "dependencies": {
+    "exceljs": "^4.4.0",
+    "express": "^4.19.2",
+    "multer": "^2.0.1",
+    "uuid": "^11.1.1"
+  }
+}
