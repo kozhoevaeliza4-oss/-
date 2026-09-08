@@ -76,9 +76,9 @@ router.post('/orders/scan', requireAuth, upload.single('photo'), async (req, res
   }
 
   const scan = await scanBuffer(req.file.buffer);
-  const scanToken = storage.saveTmp(req.file.buffer, req.file.originalname);
+  const scanToken = storage.saveTmp(req.company.id, req.file.buffer, req.file.originalname);
 
-  const existingEntries = registry.readAll();
+  const existingEntries = registry.readAll(req.company.id);
   const duplicates = findDuplicates(scan.fields, existingEntries, config.orderDuplicateThreshold);
   const suggestedNumber = registry.nextNumber(existingEntries);
 
@@ -110,7 +110,7 @@ router.post('/orders/bulk-scan', requireAuth, upload.array('photos', 30), async 
   const items = [];
   for (const file of req.files) {
     const scan = await scanBuffer(file.buffer);
-    const scanToken = storage.saveTmp(file.buffer, file.originalname);
+    const scanToken = storage.saveTmp(req.company.id, file.buffer, file.originalname);
     items.push({
       scanToken,
       originalName: file.originalname,
@@ -132,7 +132,7 @@ router.post('/orders/bulk-scan', requireAuth, upload.array('photos', 30), async 
     return 0;
   });
 
-  const existingEntries = registry.readAll();
+  const existingEntries = registry.readAll(req.company.id);
   let suggested = registry.nextNumber(existingEntries);
   const preview = items.map((item) => ({ ...item, suggestedNumber: suggested++ }));
 
@@ -150,14 +150,14 @@ router.post('/orders/confirm', requireAuth, async (req, res) => {
   }
 
   if (action === 'cancel') {
-    storage.deleteTmp(scanToken);
+    storage.deleteTmp(req.company.id, scanToken);
     return res.json({ cancelled: true });
   }
 
   if (action === 'open_existing') {
-    const existing = body.existingId ? registry.getById(body.existingId) : null;
+    const existing = body.existingId ? registry.getById(req.company.id, body.existingId) : null;
     if (!existing) return res.status(404).json({ error: 'existing entry not found' });
-    storage.deleteTmp(scanToken);
+    storage.deleteTmp(req.company.id, scanToken);
     return res.json({ opened: existing });
   }
 
@@ -172,13 +172,13 @@ router.post('/orders/confirm', requireAuth, async (req, res) => {
     ocrRawText: body.ocrRawText || '',
     ocrConfidence: body.ocrConfidence ?? null,
     needsReview: Boolean(body.needsReview),
-    registeredBy: req.get('x-user') || null,
+    registeredBy: req.company.login,
   };
 
-  const entry = await registry.registerOne(draft);
-  const filePath = storage.moveToPermanent(scanToken, { number: entry.number, date: entry.date });
+  const entry = await registry.registerOne(req.company.id, draft);
+  const filePath = storage.moveToPermanent(req.company.id, scanToken, { number: entry.number, date: entry.date });
   if (filePath) {
-    await registry.attachFile(entry.id, filePath);
+    await registry.attachFile(req.company.id, entry.id, filePath);
     entry.filePath = filePath;
   }
 
@@ -196,7 +196,7 @@ router.post('/orders/bulk-confirm', requireAuth, async (req, res) => {
     return res.status(400).json({ error: 'items is required (non-empty array)' });
   }
 
-  const registeredBy = req.get('x-user') || null;
+  const registeredBy = req.company.login;
   const drafts = items.map((item) => {
     const fields = item.fields || {};
     return {
@@ -214,15 +214,15 @@ router.post('/orders/bulk-confirm', requireAuth, async (req, res) => {
     };
   });
 
-  const created = await registry.registerBulk(drafts);
+  const created = await registry.registerBulk(req.company.id, drafts);
 
   for (let i = 0; i < created.length; i += 1) {
     const entry = created[i];
     const scanToken = drafts[i]._scanToken;
     if (!scanToken) continue;
-    const filePath = storage.moveToPermanent(scanToken, { number: entry.number, date: entry.date });
+    const filePath = storage.moveToPermanent(req.company.id, scanToken, { number: entry.number, date: entry.date });
     if (filePath) {
-      await registry.attachFile(entry.id, filePath);
+      await registry.attachFile(req.company.id, entry.id, filePath);
       entry.filePath = filePath;
     }
   }
@@ -232,12 +232,12 @@ router.post('/orders/bulk-confirm', requireAuth, async (req, res) => {
 
 router.get('/orders/search', requireAuth, (req, res) => {
   const { number, date, employeeName, type, q } = req.query;
-  const results = registry.search({ number, date, employeeName, type, q });
+  const results = registry.search(req.company.id, { number, date, employeeName, type, q });
   res.json(results);
 });
 
-router.get('/orders/export', requireAuth, async (_req, res) => {
-  const entries = registry.readAll().sort((a, b) => (a.number || 0) - (b.number || 0));
+router.get('/orders/export', requireAuth, async (req, res) => {
+  const entries = registry.readAll(req.company.id).sort((a, b) => (a.number || 0) - (b.number || 0));
 
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet('Приказы');
@@ -299,13 +299,13 @@ router.get('/orders/export', requireAuth, async (_req, res) => {
 });
 
 router.get('/orders/:id/file', requireAuth, (req, res) => {
-  const entry = registry.getById(req.params.id);
+  const entry = registry.getById(req.company.id, req.params.id);
   if (!entry || !entry.filePath) return res.status(404).json({ error: 'file not found' });
-  res.sendFile(storage.resolveStoredPath(entry.filePath));
+  res.sendFile(storage.resolveStoredPath(req.company.id, entry.filePath));
 });
 
 router.get('/orders/:id', requireAuth, (req, res) => {
-  const entry = registry.getById(req.params.id);
+  const entry = registry.getById(req.company.id, req.params.id);
   if (!entry) return res.status(404).json({ error: 'not found' });
   res.json(entry);
 });
@@ -313,16 +313,14 @@ router.get('/orders/:id', requireAuth, (req, res) => {
 // Редактирование не меняет номер приказа (ТЗ п.5.4, п.11) — поле number в
 // теле запроса, даже если передано, игнорируется registry.updateEntry.
 router.patch('/orders/:id', requireAuth, async (req, res) => {
-  const editedBy = req.get('x-user') || null;
-  const entry = await registry.updateEntry(req.params.id, req.body || {}, editedBy);
+  const entry = await registry.updateEntry(req.company.id, req.params.id, req.body || {}, req.company.login);
   if (!entry) return res.status(404).json({ error: 'not found' });
   res.json(entry);
 });
 
 router.post('/orders/:id/cancel', requireAuth, async (req, res) => {
-  const actor = req.get('x-user') || null;
   const { reason, status } = req.body || {};
-  const entry = await registry.cancelEntry(req.params.id, reason, status, actor);
+  const entry = await registry.cancelEntry(req.company.id, req.params.id, reason, status, req.company.login);
   if (!entry) return res.status(404).json({ error: 'not found' });
   res.json(entry);
 });

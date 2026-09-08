@@ -12,8 +12,8 @@ function toBool(value) {
   return value === true || value === 'true' || value === 1 || value === '1';
 }
 
-router.get('/deals', requireAuth, (_req, res) => {
-  const deals = readAll();
+router.get('/deals', requireAuth, (req, res) => {
+  const deals = readAll(req.company.id);
   res.json(deals);
 });
 
@@ -53,15 +53,15 @@ router.post('/deals', requireAuth, (req, res) => {
     notes: body.notes ? String(body.notes).trim() : '',
   };
 
-  const deals = readAll();
+  const deals = readAll(req.company.id);
   deals.push(deal);
-  writeAll(deals);
+  writeAll(req.company.id, deals);
 
   res.status(201).json(deal);
 });
 
-router.get('/deals/export', requireAuth, async (_req, res) => {
-  const deals = readAll();
+router.get('/deals/export', requireAuth, async (req, res) => {
+  const deals = readAll(req.company.id);
 
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet('Сделки');

@@ -28,7 +28,19 @@ body {
   justify-content: space-between;
 }
 .topbar h1 { margin: 0; font-size: 1.2rem; }
+.topbar-right { display: flex; align-items: center; gap: 14px; }
 .nav-link { color: white; font-size: 0.85rem; text-decoration: none; opacity: 0.9; }
+.company-name { color: white; font-size: 0.85rem; opacity: 0.85; }
+.nav-link-btn {
+  background: none;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  color: white;
+  font-size: 0.8rem;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.nav-link-btn:hover { background: rgba(255, 255, 255, 0.15); }
 
 .layout {
   display: grid;

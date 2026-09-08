@@ -2,6 +2,7 @@ const express = require('express');
 const path = require('path');
 
 const config = require('./config');
+const authRouter = require('./routes/auth');
 const dealsRouter = require('./routes/deals');
 const scanIdRouter = require('./routes/scanId');
 const ordersRouter = require('./routes/orders');
@@ -12,6 +13,7 @@ const app = express();
 app.use(express.json({ limit: '1mb' }));
 app.use(express.static(path.join(__dirname, '..', '..', 'public')));
 
+app.use('/api', authRouter);
 app.use('/api', dealsRouter);
 app.use('/api', scanIdRouter);
 app.use('/api', ordersRouter);

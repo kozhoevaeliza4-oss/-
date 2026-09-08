@@ -9,7 +9,11 @@
 <body>
   <header class="topbar">
     <h1>Оформление сделки — Nurzaman</h1>
-    <a class="nav-link" href="/orders.html">Реестр приказов →</a>
+    <div class="topbar-right">
+      <span id="companyName" class="company-name"></span>
+      <a class="nav-link" href="/orders.html">Реестр приказов →</a>
+      <button type="button" id="logoutBtn" class="nav-link-btn">Выйти</button>
+    </div>
   </header>
 
   <main class="layout">
@@ -87,6 +91,7 @@
     </section>
   </main>
 
+  <script src="/js/authGuard.js"></script>
   <script src="/js/app.js"></script>
 </body>
 </html>

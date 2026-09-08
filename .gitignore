@@ -1,7 +1,8 @@
 node_modules/
 .env
-server/src/data/deals.json
-server/src/data/orders.json
+server/src/data/companies.json
+server/src/data/deals/
+server/src/data/orders/
 server/src/data/orders-files/
 server/src/data/orders-tmp/
 *.log

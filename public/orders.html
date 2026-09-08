@@ -10,7 +10,11 @@
 <body>
   <header class="topbar">
     <h1>Реестр приказов</h1>
-    <a class="nav-link" href="/">← Оформление сделки</a>
+    <div class="topbar-right">
+      <span id="companyName" class="company-name"></span>
+      <a class="nav-link" href="/">← Оформление сделки</a>
+      <button type="button" id="logoutBtn" class="nav-link-btn">Выйти</button>
+    </div>
   </header>
 
   <main class="layout orders-layout">
@@ -121,6 +125,7 @@
     </section>
   </main>
 
+  <script src="/js/authGuard.js"></script>
   <script src="/js/orders.js"></script>
 </body>
 </html>
