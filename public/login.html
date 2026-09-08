@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Вход — Nurzaman</title>
+<link rel="stylesheet" href="/css/styles.css" />
+<style>
+  .login-wrap {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .login-card { width: 100%; max-width: 360px; }
+</style>
+</head>
+<body>
+  <div class="login-wrap">
+    <section class="card login-card">
+      <h2>Вход</h2>
+      <form id="loginForm" novalidate>
+        <label class="field">
+          <span>Логин компании</span>
+          <input type="text" name="login" id="login" autocomplete="username" required />
+        </label>
+        <label class="field">
+          <span>Пароль</span>
+          <input type="password" name="password" id="password" autocomplete="current-password" required />
+        </label>
+        <button type="submit" class="primary">Войти</button>
+        <p id="loginMessage" class="form-message" aria-live="polite"></p>
+      </form>
+    </section>
+  </div>
+
+  <script src="/js/login.js"></script>
+</body>
+</html>

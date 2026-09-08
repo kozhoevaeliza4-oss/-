@@ -1,0 +1,26 @@
+# Конфигурация деплоя на Render.com (см. README, "Развёртывание в интернете").
+# При создании веб-сервиса на render.com Render подхватывает этот файл
+# автоматически, если выбрать "New +" → "Blueprint" и указать репозиторий.
+#
+# ВАЖНО: диск персистентности (persistent disk) НЕЛЬЗЯ включить бесплатно —
+# без него все данные (реестр приказов, сделки, учётки) стираются при
+# каждом передеплое/перезапуске контейнера. Раздел disk ниже подключает
+# платный диск ($ от ~1 ГБ/мес) — без него не запускайте это в проде,
+# используйте только для пробного знакомства с интерфейсом.
+
+services:
+  - type: web
+    name: nurzaman-deal-form
+    runtime: node
+    plan: starter
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: OCR_PROVIDER
+        value: mock
+      - key: SESSION_TTL_HOURS
+        value: "12"
+    disk:
+      name: nurzaman-data
+      mountPath: /opt/render/project/src/server/src/data
+      sizeGB: 1
