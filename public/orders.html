@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Реестр приказов</title>
+<link rel="stylesheet" href="/css/styles.css" />
+<link rel="stylesheet" href="/css/orders.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1>Реестр приказов</h1>
+    <a class="nav-link" href="/">← Оформление сделки</a>
+  </header>
+
+  <main class="layout orders-layout">
+    <section class="card">
+      <h2>📸 Зарегистрировать приказ</h2>
+      <p class="muted">Сфотографируйте подписанный приказ и загрузите фото — номер присваивается автоматически.</p>
+
+      <label class="field">
+        <span>Фото приказа</span>
+        <input type="file" accept="image/*" capture="environment" id="orderPhotoInput" />
+      </label>
+      <button type="button" id="scanOrderBtn" disabled>Распознать приказ</button>
+      <span id="orderScanStatus" class="scan-status" aria-live="polite"></span>
+
+      <div id="orderPreview" class="order-preview" hidden>
+        <h3>Документ распознан</h3>
+        <div id="orderNeedsReview" class="hint-block" hidden>⚠️ Часть данных не распознана — проверьте вручную.</div>
+
+        <label class="field">
+          <span>Дата</span>
+          <input type="date" id="fDate" />
+        </label>
+        <label class="field">
+          <span>Вид приказа</span>
+          <input type="text" id="fType" />
+        </label>
+        <label class="field">
+          <span>Сотрудник (ФИО)</span>
+          <input type="text" id="fEmployee" />
+        </label>
+        <label class="field">
+          <span>Организация</span>
+          <input type="text" id="fOrg" />
+        </label>
+        <label class="field">
+          <span>Краткое содержание</span>
+          <textarea id="fSummary" rows="2"></textarea>
+        </label>
+        <label class="field">
+          <span>Примечание</span>
+          <textarea id="fNote" rows="2"></textarea>
+        </label>
+
+        <p class="suggested-number">Следующий номер: <strong id="fSuggestedNumber">—</strong></p>
+
+        <div id="duplicateWarning" class="hint-block warn" hidden></div>
+
+        <div class="button-row">
+          <button type="button" id="confirmOrderBtn" class="primary">Подтвердить</button>
+          <button type="button" id="cancelOrderBtn">Отменить</button>
+        </div>
+        <p id="orderConfirmMessage" class="form-message" aria-live="polite"></p>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Первичная загрузка старых приказов</h2>
+      <p class="muted">Загрузите сразу несколько фото/сканов, проверьте таблицу и подтвердите нумерацию.</p>
+
+      <label class="field">
+        <span>Фото приказов (можно выбрать несколько)</span>
+        <input type="file" accept="image/*" multiple id="bulkPhotoInput" />
+      </label>
+      <button type="button" id="bulkScanBtn" disabled>Распознать все</button>
+      <span id="bulkScanStatus" class="scan-status" aria-live="polite"></span>
+
+      <div id="bulkPreviewWrap" hidden>
+        <table id="bulkTable">
+          <thead>
+            <tr>
+              <th>Дата</th>
+              <th>Тип приказа</th>
+              <th>Сотрудник</th>
+              <th>Предлагаемый номер</th>
+            </tr>
+          </thead>
+          <tbody id="bulkTableBody"></tbody>
+        </table>
+        <div class="button-row">
+          <button type="button" id="bulkConfirmBtn" class="primary">Подтвердить нумерацию</button>
+        </div>
+        <p id="bulkConfirmMessage" class="form-message" aria-live="polite"></p>
+      </div>
+    </section>
+
+    <section class="card wide">
+      <div class="list-header">
+        <h2>Поиск по реестру</h2>
+        <a href="/api/orders/export" class="export-link">Экспорт в Excel</a>
+      </div>
+      <div class="search-row">
+        <input type="text" id="searchQ" placeholder="Ключевое слово, ФИО, номер..." />
+        <button type="button" id="searchBtn">Найти</button>
+      </div>
+      <table id="registryTable">
+        <thead>
+          <tr>
+            <th>№</th>
+            <th>Дата</th>
+            <th>Вид приказа</th>
+            <th>ФИО</th>
+            <th>Статус</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="registryTableBody"></tbody>
+      </table>
+    </section>
+  </main>
+
+  <script src="/js/orders.js"></script>
+</body>
+</html>

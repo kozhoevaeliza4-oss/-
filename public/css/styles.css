@@ -23,8 +23,12 @@ body {
   background: var(--accent);
   color: white;
   padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 .topbar h1 { margin: 0; font-size: 1.2rem; }
+.nav-link { color: white; font-size: 0.85rem; text-decoration: none; opacity: 0.9; }
 
 .layout {
   display: grid;

@@ -27,4 +27,15 @@ module.exports = {
   ocrConfidenceThreshold: Number(process.env.OCR_CONFIDENCE_THRESHOLD) || 0.8,
   idPhotoRetentionHours: Number(process.env.ID_PHOTO_RETENTION_HOURS) || 24,
   dataFile: path.join(__dirname, 'data', 'deals.json'),
+
+  // --- Реестр приказов (ТЗ "Автоматизированная система регистрации и
+  // нумерации приказов") ---
+  ordersDataFile: path.join(__dirname, 'data', 'orders.json'),
+  ordersStorageDir: path.join(__dirname, 'data', 'orders-files'),
+  ordersTmpDir: path.join(__dirname, 'data', 'orders-tmp'),
+  // Порог похожести (0..1) для предупреждения о возможном дубликате (п.7 ТЗ).
+  orderDuplicateThreshold: Number(process.env.ORDER_DUPLICATE_THRESHOLD) || 0.7,
+  // Сколько минут неподтверждённое фото/скан ждёт подтверждения (POST
+  // /confirm или /bulk-confirm), прежде чем временный файл можно удалить.
+  orderScanTtlMinutes: Number(process.env.ORDER_SCAN_TTL_MINUTES) || 60,
 };

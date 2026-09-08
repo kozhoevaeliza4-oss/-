@@ -1,0 +1,46 @@
+.orders-layout { grid-template-columns: 1fr; }
+@media (min-width: 900px) {
+  .orders-layout { grid-template-columns: 1fr 1fr; }
+}
+.card.wide { grid-column: 1 / -1; }
+
+.muted { color: var(--muted); font-size: 0.85rem; margin-top: -6px; }
+
+.order-preview { margin-top: 16px; border-top: 1px solid var(--border); padding-top: 12px; }
+.order-preview h3 { margin: 0 0 8px; font-size: 0.95rem; }
+
+.hint-block {
+  background: #f0f4fb;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 0.85rem;
+  margin-bottom: 12px;
+}
+.hint-block.warn {
+  background: var(--autofill-bg);
+  border-color: var(--autofill-border);
+  color: #8a6d00;
+}
+
+.suggested-number { font-size: 1rem; }
+
+.button-row { display: flex; gap: 10px; margin-top: 8px; }
+
+.search-row { display: flex; gap: 8px; margin-bottom: 12px; }
+.search-row input { flex: 1; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; }
+
+.status-registered { color: #1a7f37; }
+.status-needs_review { color: #8a6d00; }
+.status-cancelled, .status-invalid { color: #b3261e; text-decoration: line-through; }
+
+.link-btn {
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 0.8rem;
+  padding: 0;
+}
+
+#bulkTable input { width: 100%; padding: 4px 6px; border: 1px solid var(--border); border-radius: 4px; font-size: 0.85rem; }
