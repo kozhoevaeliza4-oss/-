@@ -7,6 +7,12 @@ const dealsRouter = require('./routes/deals');
 const scanIdRouter = require('./routes/scanId');
 const ordersRouter = require('./routes/orders');
 const { cleanupExpiredTmp } = require('./orders/storage');
+const { ensureSeeded } = require('./auth/ensureSeeded');
+
+// Если учётных записей компаний ещё нет — создаём их сейчас и печатаем
+// пароли в лог. Нужно для хостингов без доступа к консоли (см.
+// ./auth/ensureSeeded.js) и для первого локального запуска.
+ensureSeeded();
 
 const app = express();
 

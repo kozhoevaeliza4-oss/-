@@ -6,18 +6,15 @@
 // Запуск: node server/scripts/seedCompanies.js
 // Пароли выводятся в консоль один раз — их нужно сохранить сразу,
 // повторно посмотреть их будет нельзя (хранится только хэш).
+//
+// На хостингах без доступа к консоли сервер заводит те же учётки
+// автоматически при первом запуске — см. server/src/auth/ensureSeeded.js.
 
 const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
 const { hashPassword } = require('../src/auth/passwords');
 const { readCompanies, writeCompanies, normalizeLogin } = require('../src/auth/companies');
-
-const COMPANIES = [
-  { login: 'nurzaman-yug', name: 'ОсОО СК «Нурзаман-Юг»' },
-  { login: 'nurzaman-group', name: 'ОсОО СК «Нурзаман-групп»' },
-  { login: 'nurzaman-trc', name: 'ОсОО ТРЦ «Нурзаман»' },
-  { login: 'nurzaman-plaza', name: 'ОсОО «Нурзаман плаза»' },
-];
+const { DEFAULT_COMPANIES } = require('../src/auth/seedDefaults');
 
 function randomPassword() {
   return crypto.randomBytes(9).toString('base64').replace(/[+/=]/g, '').slice(0, 12);
@@ -27,7 +24,7 @@ function main() {
   const existing = readCompanies();
   const created = [];
 
-  for (const def of COMPANIES) {
+  for (const def of DEFAULT_COMPANIES) {
     const login = normalizeLogin(def.login);
     if (existing.find((c) => c.login === login)) {
       console.log(`Пропуск: логин "${login}" уже существует`);
