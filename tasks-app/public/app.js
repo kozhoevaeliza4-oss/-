@@ -356,6 +356,11 @@ function badges(task, status, { showDate = false, today } = {}) {
   return out.join('');
 }
 
+// Комментарий руководителя — виден обоим на карточке и в истории.
+function commentLine(task) {
+  return task.comment ? `<div class="comment">${icon('chat')}<span>${esc(task.comment)}</span></div>` : '';
+}
+
 function timeCell(task) {
   return task.time
     ? `<div class="time">${esc(task.time)}</div>`
@@ -369,11 +374,12 @@ function bossCard(task, today) {
   return `
     <article class="card ${status} ${task.priority}">
       ${timeCell(task)}
-      <div class="body">
+      <button class="body body-btn" data-action="open-task" data-id="${task.id}">
         <div class="title">${esc(task.title)}</div>
         ${task.description ? `<div class="desc">${esc(task.description)}</div>` : ''}
-        <div class="meta">${badges(task, status, { showDate: task.date !== today, today })}</div>
-      </div>
+        ${commentLine(task)}
+        <div class="meta">${badges(task, status, { showDate: task.date !== today, today })}${status === 'overdue' ? '<span class="badge move">Перенести →</span>' : ''}</div>
+      </button>
       <button class="do-btn ${done ? 'is-done' : ''}" data-action="toggle-done" data-id="${task.id}" ${busy ? 'disabled' : ''}
               aria-label="${done ? 'Вернуть в работу' : 'Выполнить'}: ${esc(task.title)}">
         <span class="ring">${icon('check')}</span>
@@ -394,14 +400,16 @@ function renderBoss() {
   const active = todays.filter((t) => !t.done);
   const timed = active.filter((t) => t.time);
   const untimed = active.filter((t) => !t.time);
-  const done = todays.filter((t) => t.done).sort((a, b) => (a.doneAt || 0) - (b.doneAt || 0));
+  // «Выполнено» — всё, что руководитель сделал сегодня, даже если задача была на другой день.
+  const doneToday = (t) => t.done && (t.doneAt ? dateIn(t.doneAt) === today : t.date === today);
+  const done = state.tasks.filter(doneToday).sort((a, b) => (a.doneAt || 0) - (b.doneAt || 0));
   const left = active.length + earlier.length;
   // Чтобы руководитель видел и ближайшие дни, а не только сегодня.
   const horizon = addDays(today, 14);
   const upcoming = state.tasks.filter((t) => t.date > today && t.date <= horizon && !t.done).sort(byTime);
 
   let content = '';
-  if (!todays.length && !earlier.length) {
+  if (!todays.length && !earlier.length && !done.length) {
     content = `
       <div class="empty${upcoming.length ? ' compact' : ''}">
         <div class="big">${icon('sun')}</div>
@@ -442,8 +450,8 @@ function renderBoss() {
     </section>
     <div class="bottom">
       <div class="counter" aria-label="Итог дня">
-        <div class="ok"><b>${done.length}</b><span>Выполнено</span></div>
-        <div><b>${left}</b><span>Осталось</span></div>
+        <div class="ok"><b>${done.length}</b><span>Выполнено сегодня</span></div>
+        <div><b>${left}</b><span>Осталось на сегодня</span></div>
       </div>
     </div>`;
 }
@@ -456,6 +464,7 @@ function assistantCard(task, today, { showDate = false } = {}) {
       <div class="body">
         <div class="title">${esc(task.title)}</div>
         ${task.description ? `<div class="desc">${esc(task.description)}</div>` : ''}
+        ${commentLine(task)}
         <div class="meta">${badges(task, status, { showDate, today })}</div>
       </div>
     </button>`;
@@ -559,6 +568,7 @@ function openHistory() {
         <div class="body">
           <div class="title">${esc(t.title)}</div>
           ${t.description ? `<div class="desc">${esc(t.description)}</div>` : ''}
+          ${commentLine(t)}
           <div class="meta">
             <span class="badge done">${icon('check')}${t.doneAt ? `в ${esc(timeIn(t.doneAt))}` : 'Выполнено'}</span>
             <span class="badge">План: ${esc(shortDate(t.date, today).toLowerCase())}${t.time ? `, ${esc(t.time)}` : ''}</span>
@@ -573,6 +583,112 @@ function openHistory() {
     ${body || '<p class="muted">Пока нет выполненных задач</p>'}`);
   sheet.querySelector('.sheet').classList.add('tall');
   sheet.addEventListener('click', onClick);
+}
+
+// Ближайшее время через N минут, округлённое вверх до 5 минут.
+function inMinutes(min) {
+  const ts = Math.ceil((now() + min * 60_000) / 300_000) * 300_000;
+  return { date: dateIn(ts), time: timeIn(ts) };
+}
+
+function openBossTask(task) {
+  const today = dateIn(now());
+  const status = statusOf(task);
+  const when = `${shortDate(task.date, today)}${task.time ? `, ${task.time}` : ', без времени'}`;
+  const hour = inMinutes(60);
+  let custom = false;
+  const sheet = openSheet('<div class="boss-task"></div>');
+  const root = sheet.querySelector('.boss-task');
+
+  function paint() {
+    const comment = root.querySelector('[name="comment"]')?.value ?? task.comment ?? '';
+    root.innerHTML = `
+      <div class="sheet-head">
+        <h2>${esc(task.title)}</h2>
+        <button type="button" class="icon-btn" data-k="close" aria-label="Закрыть">${icon('close')}</button>
+      </div>
+      <div class="field">
+        <div class="when ${status}">${esc(when)}${status === 'overdue' ? ' · просрочено' : ''}${status === 'done' ? ' · выполнено' : ''}</div>
+        ${task.description ? `<p class="desc-full">${esc(task.description)}</p>` : ''}
+      </div>
+      <div class="field">
+        <label for="f-comment">Комментарий для ассистента</label>
+        <textarea id="f-comment" class="input" name="comment" rows="2" maxlength="300"
+                  placeholder="Например: договорились на 15 октября">${esc(comment)}</textarea>
+      </div>
+      <div class="field">
+        <span class="label">Перенести</span>
+        <div class="chips">
+          <button type="button" class="chip" data-k="move" data-date="${hour.date}" data-time="${hour.time}">Через час</button>
+          <button type="button" class="chip" data-k="move" data-date="${addDays(today, 1)}" data-time="${task.time || ''}">Завтра${task.time ? ` ${task.time}` : ''}</button>
+          <button type="button" class="chip" data-k="custom" aria-pressed="${custom}">Другое…</button>
+        </div>
+        ${custom ? `
+          <div class="row">
+            <input class="input" type="date" name="date" value="${task.date < today ? today : task.date}" min="${today}" aria-label="Дата">
+            <input class="input" type="time" name="time" value="${task.time || ''}" aria-label="Время">
+          </div>
+          <button type="button" class="chip" style="width:100%;margin-top:8px" data-k="move-custom">Перенести</button>` : ''}
+      </div>
+      <p class="error" role="alert"></p>
+      ${status === 'done'
+        ? '<button type="button" class="primary" data-k="undo">↩ Вернуть в работу</button>'
+        : `<button type="button" class="primary ok" data-k="done">${icon('check')}Выполнить</button>`}
+      <button type="button" class="danger-link" style="color:var(--accent)" data-k="save-comment">Только отправить комментарий</button>`;
+  }
+
+  async function run(fn, message) {
+    const error = root.querySelector('.error');
+    root.querySelectorAll('button').forEach((b) => { b.disabled = true; });
+    try {
+      const saved = await fn();
+      Object.assign(task, saved);
+      closeSheet();
+      render();
+      vibrate();
+      toast(message);
+    } catch (err) {
+      error.textContent = err.message;
+      root.querySelectorAll('button').forEach((b) => { b.disabled = false; });
+    }
+  }
+
+  const commentValue = () => root.querySelector('[name="comment"]').value.trim();
+
+  root.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-k]');
+    if (!btn) return;
+    const k = btn.dataset.k;
+    if (k === 'close') return closeSheet();
+    if (k === 'custom') { custom = !custom; return paint(); }
+    if (k === 'done') {
+      return run(() => api(`tasks/${task.id}/done`, { method: 'POST', body: { done: true, comment: commentValue() } }), 'Выполнено');
+    }
+    if (k === 'undo') {
+      return run(() => api(`tasks/${task.id}/done`, { method: 'POST', body: { done: false } }), 'Задача возвращена в работу');
+    }
+    if (k === 'save-comment') {
+      if (!commentValue() && !task.comment) {
+        root.querySelector('.error').textContent = 'Напишите комментарий';
+        return;
+      }
+      return run(() => api(`tasks/${task.id}/comment`, { method: 'POST', body: { comment: commentValue() } }), 'Комментарий отправлен ассистенту');
+    }
+    if (k === 'move' || k === 'move-custom') {
+      const date = k === 'move' ? btn.dataset.date : root.querySelector('[name="date"]').value;
+      const time = (k === 'move' ? btn.dataset.time : root.querySelector('[name="time"]').value) || null;
+      if (!date) { root.querySelector('.error').textContent = 'Укажите дату'; return; }
+      const comment = commentValue();
+      return run(async () => {
+        if (comment !== (task.comment || '')) {
+          await api(`tasks/${task.id}/comment`, { method: 'POST', body: { comment } });
+        }
+        return api(`tasks/${task.id}/reschedule`, { method: 'POST', body: { date, time } });
+      }, `Перенесено: ${shortDate(date, today).toLowerCase()}${time ? ` в ${time}` : ''}`);
+    }
+  });
+
+  paint();
 }
 
 function openMenu() {
@@ -785,6 +901,11 @@ function onClick(e) {
     }
     case 'menu': openMenu(); break;
     case 'history': openHistory(); break;
+    case 'open-task': {
+      const task = state.tasks.find((t) => t.id === id);
+      if (task) openBossTask(task);
+      break;
+    }
     case 'undo': returnToWork(id); break;
     case 'close': closeSheet(); break;
     case 'enable-push': closeSheet(); enablePush(); break;

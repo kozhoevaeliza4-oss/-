@@ -46,6 +46,15 @@ function validateInput(body, { partial = false } = {}) {
   return { errors, value: out };
 }
 
+// Короткий комментарий руководителя к задаче (результат, уточнение).
+function validateComment(value) {
+  if (value == null) return { value: '' };
+  if (typeof value !== 'string') return { error: 'Неверный комментарий' };
+  const comment = value.trim();
+  if (comment.length > 300) return { error: 'Комментарий слишком длинный (до 300 символов)' };
+  return { value: comment };
+}
+
 function dueAtFor(task, timezone) {
   return task.time ? zonedToUtc(task.date, task.time, timezone) : null;
 }
@@ -71,6 +80,8 @@ function createTask(input, now, timezone) {
     createdAt: now,
     updatedAt: now,
     remindedAt: null,
+    comment: '',
+    commentAt: null,
   };
   task.dueAt = dueAtFor(task, timezone);
   return task;
@@ -90,6 +101,7 @@ function publicTask(task, now, timezone) {
 module.exports = {
   PRIORITIES,
   validateInput,
+  validateComment,
   dueAtFor,
   statusOf,
   createTask,

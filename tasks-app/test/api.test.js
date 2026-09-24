@@ -161,3 +161,40 @@ test('подписки на уведомления и защита входа', 
   const blocked = await s.call('POST', '/login', { body: { role: 'boss', pin: '2222' } });
   assert.strictEqual(blocked.status, 429);
 });
+
+test('руководитель: комментарий и перенос задачи', async (t) => {
+  const s = await setup();
+  t.after(s.close);
+  const a = (await s.call('POST', '/login', { body: { role: 'assistant', pin: '1111' } })).body.token;
+  const b = (await s.call('POST', '/login', { body: { role: 'boss', pin: '2222' } })).body.token;
+  const task = (await s.call('POST', '/tasks', { token: a, body: { title: 'Позвонить подрядчику', date: '2026-09-24', time: '11:00' } })).body;
+  assert.strictEqual(task.status, 'overdue'); // сейчас 12:00
+
+  // Комментарий без выполнения
+  s.sent.length = 0;
+  const c = await s.call('POST', `/tasks/${task.id}/comment`, { token: b, body: { comment: ' Не дозвонился ' } });
+  assert.strictEqual(c.body.comment, 'Не дозвонился');
+  assert.deepStrictEqual(s.sent.map((m) => [m.role, m.title, m.body]), [
+    ['assistant', 'Комментарий руководителя', 'Позвонить подрядчику — «Не дозвонился»'],
+  ]);
+  // Ассистент не может писать комментарий руководителя
+  assert.strictEqual((await s.call('POST', `/tasks/${task.id}/comment`, { token: a, body: { comment: 'x' } })).status, 403);
+
+  // Перенос на завтра
+  s.sent.length = 0;
+  const moved = await s.call('POST', `/tasks/${task.id}/reschedule`, { token: b, body: { date: '2026-09-25', time: '10:00' } });
+  assert.strictEqual(moved.body.status, 'pending');
+  assert.strictEqual(moved.body.dueAt, Date.parse('2026-09-25T04:00:00Z'));
+  assert.deepStrictEqual(s.sent.map((m) => [m.role, m.title, m.body]), [
+    ['assistant', 'Руководитель перенёс задачу', 'Позвонить подрядчику — завтра в 10:00'],
+  ]);
+  assert.strictEqual((await s.call('POST', `/tasks/${task.id}/reschedule`, { token: b, body: { date: 'завтра' } })).status, 400);
+
+  // Выполнение с комментарием
+  s.sent.length = 0;
+  const done = await s.call('POST', `/tasks/${task.id}/done`, { token: b, body: { done: true, comment: 'Договорились на 15.10' } });
+  assert.strictEqual(done.body.status, 'done');
+  assert.strictEqual(done.body.comment, 'Договорились на 15.10');
+  assert.deepStrictEqual(s.sent.map((m) => m.body), ['Позвонить подрядчику — «Договорились на 15.10»']);
+  assert.strictEqual((await s.call('POST', `/tasks/${task.id}/done`, { token: b, body: { comment: 'x'.repeat(301) } })).status, 400);
+});

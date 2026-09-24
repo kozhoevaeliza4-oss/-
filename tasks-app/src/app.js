@@ -1,6 +1,6 @@
 const path = require('path');
 const express = require('express');
-const { validateInput, createTask, dueAtFor, describeWhen, publicTask } = require('./tasks');
+const { validateInput, validateComment, createTask, dueAtFor, describeWhen, publicTask } = require('./tasks');
 const { dateIn } = require('./time');
 
 // Собирает HTTP-приложение. Все внешние зависимости (хранилище, отправка
@@ -126,18 +126,36 @@ function createApp({ store, auth, limiter, send, clock = Date.now, timezone, rem
   });
 
   // Отметить выполненной (или вернуть в работу, если нажали по ошибке).
+  function setComment(task, comment, now) {
+    if (comment === task.comment) return false;
+    task.comment = comment;
+    task.commentAt = comment ? now : null;
+    return true;
+  }
+
+  function withComment(task) {
+    return task.comment ? `${task.title} — «${task.comment}»` : task.title;
+  }
+
   app.post('/api/tasks/:id/done', requireRole(), (req, res) => {
     const task = findTask(req, res);
     if (!task) return;
     const done = req.body?.done !== false;
+    let comment = null;
+    if (req.role === 'boss' && req.body && 'comment' in req.body) {
+      const c = validateComment(req.body.comment);
+      if (c.error) return res.status(400).json({ error: c.error });
+      comment = c.value;
+    }
     const now = clock();
     const changed = task.done !== done;
     task.done = done;
     task.doneAt = done ? task.doneAt || now : null;
     task.updatedAt = now;
+    if (comment !== null) setComment(task, comment, now);
     store.save();
     if (changed && done && req.role === 'boss') {
-      notify('assistant', { title: 'Выполнено', body: task.title, tag: `done-${task.id}`, taskId: task.id });
+      notify('assistant', { title: 'Выполнено', body: withComment(task), tag: `done-${task.id}`, taskId: task.id });
     }
     if (changed && !done && req.role === 'assistant') {
       notify('boss', {
@@ -147,6 +165,46 @@ function createApp({ store, auth, limiter, send, clock = Date.now, timezone, rem
         taskId: task.id,
       });
     }
+    broadcast();
+    res.json(publicTask(task, now, timezone));
+  });
+
+  // Комментарий руководителя без выполнения: «перезвоню в пятницу» и т.п.
+  app.post('/api/tasks/:id/comment', requireRole('boss'), (req, res) => {
+    const task = findTask(req, res);
+    if (!task) return;
+    const c = validateComment(req.body?.comment);
+    if (c.error) return res.status(400).json({ error: c.error });
+    const now = clock();
+    if (setComment(task, c.value, now)) {
+      task.updatedAt = now;
+      store.save();
+      if (task.comment) {
+        notify('assistant', { title: 'Комментарий руководителя', body: withComment(task), tag: `comment-${task.id}`, taskId: task.id });
+      }
+      broadcast();
+    }
+    res.json(publicTask(task, now, timezone));
+  });
+
+  // Руководитель сам переносит задачу на другое время.
+  app.post('/api/tasks/:id/reschedule', requireRole('boss'), (req, res) => {
+    const task = findTask(req, res);
+    if (!task) return;
+    const { errors, value } = validateInput({ date: req.body?.date, time: req.body?.time ?? null }, { partial: true });
+    if (errors.length) return res.status(400).json({ error: errors[0], errors });
+    const now = clock();
+    Object.assign(task, value, { done: false, doneAt: null, updatedAt: now });
+    task.dueAt = dueAtFor(task, timezone);
+    // Сам руководитель только что перенёс — напоминание за N минут всё равно пригодится.
+    task.remindedAt = null;
+    store.save();
+    notify('assistant', {
+      title: 'Руководитель перенёс задачу',
+      body: `${task.title} — ${describeWhen(task, now, timezone)}`,
+      tag: `task-${task.id}`,
+      taskId: task.id,
+    });
     broadcast();
     res.json(publicTask(task, now, timezone));
   });
