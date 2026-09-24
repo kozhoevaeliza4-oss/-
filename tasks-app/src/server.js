@@ -59,7 +59,9 @@ setInterval(() => {
   });
 }, 20_000).unref();
 
-app.set('trust proxy', process.env.TRUST_PROXY || 'loopback, linklocal, uniquelocal');
+// За прокси хостинга (Render и т.п.) — число доверенных прокси, например TRUST_PROXY=1.
+const trustProxy = process.env.TRUST_PROXY || 'loopback, linklocal, uniquelocal';
+app.set('trust proxy', /^\d+$/.test(trustProxy) ? Number(trustProxy) : trustProxy);
 app.listen(config.port, () => {
   console.log(`Задачи руководителя: http://localhost:${config.port}`);
 });
