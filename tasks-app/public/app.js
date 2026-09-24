@@ -68,6 +68,10 @@ function dateObj(date) {
   return new Date(Date.UTC(y, m - 1, d, 12));
 }
 
+function timeIn(ts) {
+  return new Intl.DateTimeFormat('ru-RU', { timeZone: tz(), hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(ts);
+}
+
 // «четверг, 24 сентября»
 function longDate(date) {
   return new Intl.DateTimeFormat('ru-RU', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' }).format(dateObj(date));
@@ -419,6 +423,9 @@ function renderBoss() {
     content += section('Выполнено', done.map((t) => bossCard(t, today)));
   }
   content += section('Предстоящие', upcoming.map((t) => bossCard(t, today)));
+  if (state.tasks.some((t) => t.done)) {
+    content += '<button class="history-link" data-action="history">История выполненных задач →</button>';
+  }
 
   $app.innerHTML = `
     <section class="screen">
@@ -475,7 +482,10 @@ function renderAssistant() {
   for (const [date, list] of byDate) {
     content += section(shortDate(date, today), list.map((t) => assistantCard(t, today)));
   }
-  content += section('Выполнено', done.map((t) => assistantCard(t, today, { showDate: true })));
+  content += section('Выполнено за неделю', done.map((t) => assistantCard(t, today, { showDate: true })));
+  if (state.tasks.some((t) => t.done)) {
+    content += '<button class="history-link" data-action="history">История выполненных задач →</button>';
+  }
 
   if (!overdue.length && !upcoming.length && !done.length) {
     content = `
@@ -532,6 +542,38 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') closeSheet();
 });
 
+// Все выполненные задачи, сгруппированные по дню выполнения — новые сверху.
+function openHistory() {
+  const today = dateIn(now());
+  const done = state.tasks.filter((t) => t.done).sort((a, b) => (b.doneAt || 0) - (a.doneAt || 0));
+  const groups = new Map();
+  for (const t of done) {
+    const day = t.doneAt ? dateIn(t.doneAt) : t.date;
+    if (!groups.has(day)) groups.set(day, []);
+    groups.get(day).push(t);
+  }
+  let body = '';
+  for (const [day, list] of groups) {
+    body += section(`${shortDate(day, today)} · ${list.length}`, list.map((t) => `
+      <div class="card done-row">
+        <div class="body">
+          <div class="title">${esc(t.title)}</div>
+          ${t.description ? `<div class="desc">${esc(t.description)}</div>` : ''}
+          <div class="meta">
+            <span class="badge done">${icon('check')}${t.doneAt ? `в ${esc(timeIn(t.doneAt))}` : 'Выполнено'}</span>
+            <span class="badge">План: ${esc(shortDate(t.date, today).toLowerCase())}${t.time ? `, ${esc(t.time)}` : ''}</span>
+          </div>
+        </div>
+      </div>`));
+  }
+  const sheet = openSheet(`
+    <div class="sheet-head"><h2>Выполнено</h2><button class="icon-btn" data-action="close" aria-label="Закрыть">${icon('close')}</button></div>
+    <p class="muted" style="margin:0 4px 8px">Всего выполнено: <b>${done.length}</b></p>
+    ${body || '<p class="muted">Пока нет выполненных задач</p>'}`);
+  sheet.querySelector('.sheet').classList.add('tall');
+  sheet.addEventListener('click', onClick);
+}
+
 function openMenu() {
   const who = state.role === 'boss' ? 'Руководитель' : 'Ассистент';
   const pushLine = state.push === 'on'
@@ -542,6 +584,7 @@ function openMenu() {
     <p class="muted who" style="margin:0 4px 12px">Вы вошли как: <b>${who}</b></p>
     <div class="menu">
       ${pushLine}
+      <button data-action="history">История выполненных</button>
       <button data-action="logout" style="color:var(--danger)">Выйти</button>
     </div>`);
   sheet.addEventListener('click', onClick);
@@ -725,6 +768,7 @@ function onClick(e) {
       break;
     }
     case 'menu': openMenu(); break;
+    case 'history': openHistory(); break;
     case 'close': closeSheet(); break;
     case 'enable-push': closeSheet(); enablePush(); break;
     case 'logout': logout(); break;
