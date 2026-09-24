@@ -98,6 +98,16 @@ test('основной сценарий: ассистент добавляет, 
   const undo = await s.call('POST', `/tasks/${created.body.id}/done`, { token: b, body: { done: false } });
   assert.strictEqual(undo.body.status, 'pending');
   assert.strictEqual(s.sent.length, 0);
+
+  // Ассистент возвращает недоделанную задачу — руководитель узнаёт об этом.
+  await s.call('POST', `/tasks/${created.body.id}/done`, { token: b, body: { done: true } });
+  s.sent.length = 0;
+  const back = await s.call('POST', `/tasks/${created.body.id}/done`, { token: a, body: { done: false } });
+  assert.strictEqual(back.body.status, 'pending');
+  assert.strictEqual(back.body.doneAt, null);
+  assert.deepStrictEqual(s.sent.map((m) => [m.role, m.title, m.body]), [
+    ['boss', 'Задача возвращена в работу', 'Позвонить подрядчику — сегодня в 15:00'],
+  ]);
 });
 
 test('просрочка, редактирование и удаление', async (t) => {

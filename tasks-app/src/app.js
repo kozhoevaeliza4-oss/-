@@ -139,6 +139,14 @@ function createApp({ store, auth, limiter, send, clock = Date.now, timezone, rem
     if (changed && done && req.role === 'boss') {
       notify('assistant', { title: 'Выполнено', body: task.title, tag: `done-${task.id}`, taskId: task.id });
     }
+    if (changed && !done && req.role === 'assistant') {
+      notify('boss', {
+        title: 'Задача возвращена в работу',
+        body: `${task.title} — ${describeWhen(task, now, timezone)}`,
+        tag: `task-${task.id}`,
+        taskId: task.id,
+      });
+    }
     broadcast();
     res.json(publicTask(task, now, timezone));
   });

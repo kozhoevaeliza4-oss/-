@@ -563,6 +563,7 @@ function openHistory() {
             <span class="badge done">${icon('check')}${t.doneAt ? `в ${esc(timeIn(t.doneAt))}` : 'Выполнено'}</span>
             <span class="badge">План: ${esc(shortDate(t.date, today).toLowerCase())}${t.time ? `, ${esc(t.time)}` : ''}</span>
           </div>
+          <button class="undo-btn" data-action="undo" data-id="${t.id}">↩ Вернуть в работу</button>
         </div>
       </div>`));
   }
@@ -647,6 +648,7 @@ function openTaskForm(task) {
       </div>
       <p class="error" role="alert"></p>
       <button class="primary" type="submit">${task ? 'Сохранить' : 'Добавить'}</button>
+      ${task?.done ? '<button type="button" class="danger-link" style="color:var(--accent)" data-action="undo">↩ Вернуть в работу</button>' : ''}
       ${task ? '<button type="button" class="danger-link" data-action="delete">Удалить задачу</button>' : ''}`;
   }
 
@@ -677,6 +679,8 @@ function openTaskForm(task) {
     } else if (btn.dataset.action === 'no-time') {
       draft.time = '';
       paint();
+    } else if (btn.dataset.action === 'undo') {
+      returnToWork(task.id);
     } else if (btn.dataset.action === 'delete') {
       if (!confirm(`Удалить задачу «${task.title}»?`)) return;
       try {
@@ -741,12 +745,24 @@ async function toggleDone(id) {
   try {
     const saved = await api(`tasks/${id}/done`, { method: 'POST', body: { done } });
     Object.assign(task, saved);
+    return true;
   } catch (err) {
     Object.assign(task, prev);
     toast('Не удалось отметить. Проверьте связь');
+    return false;
   } finally {
     state.pending.delete(id);
     render();
+  }
+}
+
+// Задачу отметили выполненной, но она не доделана — вернуть в список.
+async function returnToWork(id) {
+  const task = state.tasks.find((t) => t.id === id);
+  if (!task?.done) return;
+  closeSheet();
+  if (await toggleDone(id)) {
+    toast(statusOf(task) === 'overdue' ? 'Возвращено в работу — задача просрочена' : 'Задача возвращена в работу');
   }
 }
 
@@ -769,6 +785,7 @@ function onClick(e) {
     }
     case 'menu': openMenu(); break;
     case 'history': openHistory(); break;
+    case 'undo': returnToWork(id); break;
     case 'close': closeSheet(); break;
     case 'enable-push': closeSheet(); enablePush(); break;
     case 'logout': logout(); break;

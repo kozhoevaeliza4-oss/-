@@ -436,6 +436,15 @@ textarea.input { resize: none; min-height: 76px; font-size: 17px; }
 .sheet.tall { min-height: 70dvh; }
 .card.done-row { background: var(--card-done); }
 .card.done-row .title { color: var(--text); }
+.undo-btn {
+  margin-top: 10px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: #fff;
+  color: var(--accent);
+  font-size: 15px;
+  font-weight: 600;
+}
 .history-link {
   display: block;
   width: 100%;
