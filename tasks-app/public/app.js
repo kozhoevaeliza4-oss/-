@@ -392,14 +392,17 @@ function renderBoss() {
   const untimed = active.filter((t) => !t.time);
   const done = todays.filter((t) => t.done).sort((a, b) => (a.doneAt || 0) - (b.doneAt || 0));
   const left = active.length + earlier.length;
+  // Чтобы руководитель видел и ближайшие дни, а не только сегодня.
+  const horizon = addDays(today, 14);
+  const upcoming = state.tasks.filter((t) => t.date > today && t.date <= horizon && !t.done).sort(byTime);
 
   let content = '';
   if (!todays.length && !earlier.length) {
     content = `
-      <div class="empty">
+      <div class="empty${upcoming.length ? ' compact' : ''}">
         <div class="big">${icon('sun')}</div>
         <h2>На сегодня задач нет</h2>
-        <p>Когда ассистент добавит задачу, придёт уведомление</p>
+        <p>${upcoming.length ? 'Ниже — задачи на ближайшие дни' : 'Когда ассистент добавит задачу, придёт уведомление'}</p>
       </div>`;
   } else {
     content += section('Не выполнено ранее', earlier.map((t) => bossCard(t, today)), 'danger');
@@ -415,6 +418,7 @@ function renderBoss() {
     }
     content += section('Выполнено', done.map((t) => bossCard(t, today)));
   }
+  content += section('Предстоящие', upcoming.map((t) => bossCard(t, today)));
 
   $app.innerHTML = `
     <section class="screen">
