@@ -1,0 +1,32 @@
+# Настройки для render.com: приложение «Задачи руководителя» (папка tasks-app).
+# Render → New → Blueprint → выбрать этот репозиторий.
+#
+# Бесплатный вариант: у бесплатного Render нет постоянного диска, поэтому
+# данные хранятся в бесплатной базе PostgreSQL (neon.tech), а чтобы сервер
+# не засыпал, раз в 10 минут его «будит» cron-job.org (см. tasks-app/README.md).
+services:
+  - type: web
+    name: boss-tasks
+    runtime: node
+    rootDir: tasks-app
+    plan: free
+    region: frankfurt
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: APP_TIMEZONE
+        value: Asia/Bishkek
+      - key: REMINDER_MINUTES
+        value: "30"
+      - key: TRUST_PROXY
+        value: "1"
+      # Эти три значения Render спросит при создании.
+      - key: ASSISTANT_PIN
+        sync: false
+      - key: BOSS_PIN
+        sync: false
+      - key: DATABASE_URL
+        sync: false
