@@ -56,6 +56,10 @@ function createApp({ store, auth, limiter, send, clock = Date.now, timezone, rem
     task.remindedAt = task.dueAt != null && task.dueAt - now <= reminderMinutes * 60_000 ? now : null;
   }
 
+  // Для проверки хостингом и внешнего «будильника», который не даёт
+  // бесплатному серверу уснуть (иначе напоминания не придут вовремя).
+  app.get('/api/health', (req, res) => res.json({ ok: true }));
+
   app.post('/api/login', (req, res) => {
     const ip = req.ip;
     if (limiter.blocked(ip)) return res.status(429).json({ error: 'Слишком много попыток. Подождите минуту' });

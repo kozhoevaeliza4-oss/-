@@ -35,5 +35,6 @@ module.exports = {
     privateKey: env.VAPID_PRIVATE_KEY || '',
   },
   sessionSecret: env.SESSION_SECRET || '',
+  databaseUrl: env.DATABASE_URL || '',
   dataFile: path.resolve(env.DATA_FILE || path.join(__dirname, '..', 'data', 'db.json')),
 };

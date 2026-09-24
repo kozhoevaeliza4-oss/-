@@ -50,19 +50,34 @@ npm start               # http://localhost:3000
 Телефон запоминает вход. Чтобы разлогинить все устройства пользователя —
 смените его PIN в `.env` и перезапустите сервер.
 
-## Размещение на Render (самый простой путь)
+## Размещение бесплатно: Render + Neon + cron-job.org
 
 В корне репозитория лежит `render.yaml` — готовые настройки.
 
-1. Зарегистрироваться на [render.com](https://render.com) через GitHub.
-2. **New → Blueprint** → выбрать этот репозиторий (и ветку с приложением).
-3. Render спросит `ASSISTANT_PIN` и `BOSS_PIN` — придумать два PIN-кода.
-4. Нажать **Apply** и подождать 2–3 минуты. Render выдаст адрес вида
-   `https://boss-tasks.onrender.com` — с HTTPS, это и есть адрес приложения.
+**1. База данных (neon.tech, бесплатно).**
+Зарегистрироваться на [neon.tech](https://neon.tech) → создать проект
+(регион — Frankfurt) → на главной странице проекта нажать **Connect** и
+скопировать строку подключения вида
+`postgresql://neondb_owner:...@ep-...neon.tech/neondb?sslmode=require`.
 
-Стоимость: тариф Starter ~7 $/мес + диск 1 ГБ ~0,25 $/мес. Бесплатный тариф
-не подходит: он «засыпает» без посещений (напоминания не придут) и не хранит
-данные между перезапусками.
+**2. Сервер (render.com, бесплатно).**
+**New → Blueprint** → репозиторий → ветка с приложением. Render спросит:
+- `ASSISTANT_PIN`, `BOSS_PIN` — придумать два PIN-кода;
+- `DATABASE_URL` — вставить строку из Neon.
+
+**Deploy Blueprint** → через 3–5 минут появится адрес вида
+`https://boss-tasks.onrender.com`.
+
+**3. «Будильник» (cron-job.org, бесплатно).**
+Бесплатный Render засыпает через 15 минут без посещений — тогда напоминания
+не придут. Зарегистрироваться на [cron-job.org](https://cron-job.org) →
+**Create cronjob** → URL `https://<ваш-адрес>.onrender.com/api/health` →
+расписание **каждые 10 минут** → **Create**.
+
+Платный вариант без Neon и будильника: в `render.yaml` поставить
+`plan: starter`, убрать `DATABASE_URL` и добавить диск
+(`disk: {name: data, mountPath: /var/data, sizeGB: 1}` + `DATA_FILE=/var/data/db.json`),
+~7,25 $/мес.
 
 ## Размещение на своём сервере
 
