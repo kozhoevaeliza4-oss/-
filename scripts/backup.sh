@@ -13,4 +13,4 @@ umask 077
 pg_dump --format=custom --file="$BACKUP_DIR/db-$STAMP.dump" "${DATABASE_URL%%\?*}"
 tar -czf "$BACKUP_DIR/storage-$STAMP.tar.gz" -C "$(dirname "$STORAGE_DIR")" "$(basename "$STORAGE_DIR")"
 echo "Готово: $BACKUP_DIR/db-$STAMP.dump, $BACKUP_DIR/storage-$STAMP.tar.gz"
-# Восстановление: pg_restore --clean --dbname="$DATABASE_URL_БЕЗ_SCHEMA" db-XXXX.dump; tar -xzf storage-XXXX.tar.gz
+# Восстановление: scripts/restore.sh (см. README, раздел «Резервное копирование и восстановление»)

@@ -1,4 +1,6 @@
 import { execSync } from "node:child_process";
+import { rmSync } from "node:fs";
+import path from "node:path";
 import { PrismaClient } from "@prisma/client";
 import type { TestProject } from "vitest/node";
 
@@ -14,6 +16,8 @@ declare module "vitest" {
  * Если БД недоступна, интеграционные тесты пропускаются.
  */
 export default async function setup(project: TestProject) {
+  // тестовое хранилище очищается вместе с тестовой БД
+  rmSync(path.resolve(import.meta.dirname, "../.test-storage"), { recursive: true, force: true });
   const url = process.env.TEST_DATABASE_URL ?? "postgresql://app:app@localhost:5432/construction_registry_test?schema=public";
   const dbName = new URL(url).pathname.slice(1);
   if (!dbName.endsWith("_test")) throw new Error(`Тестовая БД должна оканчиваться на _test, получено: ${dbName}`);

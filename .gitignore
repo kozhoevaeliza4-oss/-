@@ -10,3 +10,6 @@ storage/*
 coverage/
 backups/
 samples/
+qa-data/
+qa-out/
+.test-storage/

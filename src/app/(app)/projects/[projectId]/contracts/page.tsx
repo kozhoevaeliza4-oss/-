@@ -58,7 +58,7 @@ export default async function ContractsPage({
         ))}
       </div>
       <div className="grid gap-4 xl:grid-cols-4">
-        <div className="space-y-3 xl:col-span-3">
+        <div className="min-w-0 space-y-3 xl:col-span-3">
           <form className="card flex flex-wrap items-end gap-2 p-3" action={base}>
             {sp.flag && <input type="hidden" name="flag" value={sp.flag} />}
             <label className="min-w-[200px] flex-1"><span className="label">Поиск</span><input name="q" defaultValue={sp.q} className="input" placeholder="Номер, подрядчик, предмет" /></label>

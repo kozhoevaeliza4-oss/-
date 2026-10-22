@@ -50,7 +50,7 @@ export default async function DashboardPage({ params }: { params: Promise<{ proj
 
       <section>
         <h2 className="mb-2 text-sm font-semibold text-slate-700">Смета и договоры</h2>
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6">
           <Stat label="Первоначальная утверждённая смета" value={fmtMoney(c.baselineTotal, cur, "Нет данных")} hint={d.data.baselineVersion ? `v${d.data.baselineVersion.versionNumber} · расшифровка` : undefined} href={ex("baselineCost")} />
           <Stat label="Текущая утверждённая смета" value={fmtMoney(c.currentTotal, cur, "Нет данных")} hint="расшифровка" href={ex("plannedCost")} />
           {canContracts ? <Stat label="Сумма действующих договоров" value={fmtMoney(c.contractsTotal, cur, "Нет данных")} hint={`${c.contractsCount} договоров${c.contractsIncomplete ? `, без суммы: ${c.contractsIncomplete}` : ""}`} href={ex("contractsTotal")} /> : <Stat label="Сумма действующих договоров" value={NA} />}
@@ -68,7 +68,7 @@ export default async function DashboardPage({ params }: { params: Promise<{ proj
 
       <section>
         <h2 className="mb-2 text-sm font-semibold text-slate-700">Выполнение и АВР</h2>
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6">
           <Stat label="Средневзвешенная физическая готовность" value={fmtPct(c.weightedReadiness, "Нет данных")} hint={c.readinessDataCoverage ? `по статьям с данными (${fmtPct(c.readinessDataCoverage)} плановой стоимости)` : undefined} href={reg("progress=partial")} />
           <Stat label="Стоимость физически выполненного" value={fmtMoney(c.earned.sum, cur, "Нет данных")} hint={missing(c.earned.missing) ?? "расчётно, по расценкам сметы"} href={ex("earned")} />
           {canActs ? <Stat label="Подписанные АВР" value={fmtMoney(c.actsSigned, cur, "Нет данных")} hint="расшифровка" href={ex("actsSigned")} /> : <Stat label="Подписанные АВР" value={NA} />}
@@ -81,7 +81,7 @@ export default async function DashboardPage({ params }: { params: Promise<{ proj
       {canAcc && (
         <section>
           <h2 className="mb-2 text-sm font-semibold text-slate-700">Затраты, оплаты, прогноз</h2>
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6">
             <Stat label={d.data.project.costMethodologyConfirmed ? "Фактические затраты (1С)" : "Импортированные затраты по 1С"} value={fmtMoney(c.accountingCost.sum, cur, "Нет данных")} hint={d.data.project.costMethodologyConfirmed ? "расшифровка" : "методика не согласована"} href={ex("accountingCost")} />
             <Stat label="Оплачено" value={fmtMoney(c.paid, cur, "Нет данных")} hint="по платежам 1С" href={ex("paid")} />
             <Stat label="Статьи с превышением затрат" value={c.overrunCount} hint={c.overrunPreliminary ? "предварительно" : undefined} href={reg("deviation=overrun")} tone={c.overrunCount ? "red" : undefined} />

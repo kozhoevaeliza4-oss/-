@@ -79,6 +79,17 @@ describe.runIf(enabled)("Интеграция: смета, реестр, вып�
     ).rejects.toThrow(/уже загружался/);
   });
 
+  it("QA-13: пересохранённый файл с тем же содержимым тоже распознаётся как повторный", async () => {
+    const wb = new ExcelJS.Workbook();
+    wb.created = new Date("2020-01-01T00:00:00Z");
+    wb.modified = new Date("2021-06-01T12:34:56Z");
+    wb.creator = "Другой пользователь";
+    const ws = wb.addWorksheet("Смета");
+    V1.forEach((r) => ws.addRow(r));
+    const resaved = new File([Buffer.from(await wb.xlsx.writeBuffer())], "v1-resaved.xlsx", { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    await expect(startEstimateImport(userId, projectId, { file: resaved, name: "пересохранён", notes: null, allowDuplicate: false })).rejects.toThrow(/уже загружался/);
+  });
+
   it("Тест 1 на данных БД: 100 м² × 1000, факт 40 м²", async () => {
     const item = await prisma.workItem.findFirstOrThrow({ where: { projectId, code: "15-01-001" } });
     await recordProgress(userId, projectId, item.id, { asOfDate: "2026-10-01", quantity: "40", comment: "замер" }, { canConfirmOverrun: false });

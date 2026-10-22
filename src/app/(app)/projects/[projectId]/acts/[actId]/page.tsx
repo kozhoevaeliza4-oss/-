@@ -63,7 +63,7 @@ export default async function ActPage({ params, searchParams }: { params: Promis
         <p className="mb-3 text-sm">Корректировки: {act.corrections.map((c) => <Link key={c.id} className="link mr-2" href={`/projects/${projectId}/acts/${c.id}`}>№ {c.number} ({ACT_STATUS[c.status].label})</Link>)}</p>
       )}
 
-      <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-5">
+      <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-5">
         <Stat label="Сумма строк" value={fmtMoney(total, act.currency, "—")} />
         <Stat label="Итог по документу" value={fmtMoney(act.documentTotal?.toString(), act.currency, "Не указан")} hint={act.vatAmount ? `в т.ч. НДС ${fmtMoney(act.vatAmount.toString(), act.currency)}` : undefined} />
         <Stat label="Строк" value={act.lines.length} hint={`без статьи: ${act.lines.filter((l) => l.allocations.length === 0).length}`} />
@@ -72,7 +72,7 @@ export default async function ActPage({ params, searchParams }: { params: Promis
       </div>
 
       <div className="grid gap-4 xl:grid-cols-3">
-        <div className="space-y-4 xl:col-span-2">
+        <div className="min-w-0 space-y-4 xl:col-span-2">
           {editable && canEdit && sp.edit ? (
             <Card title="Редактирование акта" actions={<Link className="link text-xs" href="?">Отмена</Link>}>
               <ActEditor

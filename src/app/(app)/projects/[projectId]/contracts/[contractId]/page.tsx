@@ -78,7 +78,7 @@ export default async function ContractPage({
         <div className="mb-4 flex flex-wrap gap-2">{row.flags.map((f) => <Badge key={f} tone="yellow">{CONTRACT_FLAG_LABELS[f]}</Badge>)}</div>
       )}
 
-      <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
+      <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-4 xl:grid-cols-8">
         <Stat label="Исходная сумма" value={fmtMoney(row.originalAmount, cur, "Нет данных")} />
         <Stat label="Доп. соглашения (подписанные)" value={fmtMoney(row.amendmentsDelta, cur, "—")} />
         <Stat label="Текущая сумма" value={fmtMoney(row.currentAmount, cur, "Нет данных")} />
@@ -90,7 +90,7 @@ export default async function ContractPage({
       </div>
 
       <div className="grid gap-4 xl:grid-cols-5">
-        <div className="space-y-4 xl:col-span-3">
+        <div className="min-w-0 space-y-4 xl:col-span-3">
           <Card
             title={`Распределение по статьям сметы (${c.allocations.length})`}
             actions={<span className="text-xs text-slate-500">Покрытие считается только по подтверждённым строкам</span>}
@@ -177,7 +177,7 @@ export default async function ContractPage({
           </Card>
         </div>
 
-        <div className="space-y-4 xl:col-span-2">
+        <div className="min-w-0 space-y-4 xl:col-span-2">
           {fields.length > 0 && (
             <Card
               title={`Извлечённые данные (${pending.length} требуют проверки)`}

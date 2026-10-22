@@ -46,7 +46,7 @@ export default async function EstimatePage({ params }: { params: Promise<{ proje
     <>
     <PageHeader title="Смета" />
     <div className="grid gap-4 xl:grid-cols-3">
-      <div className="space-y-4 xl:col-span-2">
+      <div className="min-w-0 space-y-4 xl:col-span-2">
         <Card
           title="Версии сметы"
           actions={
@@ -119,6 +119,7 @@ export default async function EstimatePage({ params }: { params: Promise<{ proje
           {jobs.length === 0 ? (
             <EmptyState>Загрузок не было.</EmptyState>
           ) : (
+            <div className="overflow-x-auto">
             <table className="table-base">
               <thead><tr><th>Дата</th><th>Файл</th><th>Пользователь</th><th>Статус</th><th>Результат</th></tr></thead>
               <tbody>
@@ -139,6 +140,7 @@ export default async function EstimatePage({ params }: { params: Promise<{ proje
                 ))}
               </tbody>
             </table>
+            </div>
           )}
         </Card>
       </div>

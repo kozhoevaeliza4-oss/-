@@ -2,11 +2,18 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useRef } from "react";
 
 export function NavTabs({ tabs }: { tabs: { href: string; label: string; exact?: boolean }[] }) {
   const path = usePathname();
+  const nav = useRef<HTMLElement>(null);
+  // На телефоне лента вкладок прокручивается: активная вкладка не должна оставаться за краем экрана
+  useEffect(() => {
+    const el = nav.current?.querySelector<HTMLElement>("[aria-current=page]");
+    if (el && nav.current && nav.current.scrollWidth > nav.current.clientWidth) nav.current.scrollLeft = el.offsetLeft - 16;
+  }, [path]);
   return (
-    <nav className="-mx-4 mb-5 flex gap-1 overflow-x-auto border-b border-slate-200 px-4 sm:mx-0 sm:px-0">
+    <nav ref={nav} className="relative -mx-4 mb-5 flex gap-1 overflow-x-auto border-b border-slate-200 px-4 sm:mx-0 sm:px-0">
       {tabs.map((t) => {
         const active = t.exact ? path === t.href : path === t.href || path.startsWith(t.href + "/");
         return (

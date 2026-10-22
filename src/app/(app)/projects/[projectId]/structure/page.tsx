@@ -25,11 +25,12 @@ export default async function StructurePage({ params }: { params: Promise<{ proj
     <>
     <PageHeader title="Структура и настройки" />
     <div className="grid gap-4 xl:grid-cols-2">
-      <div className="space-y-4">
+      <div className="min-w-0 space-y-4">
         <Card title="Корпуса / объекты">
           {project.objects.length === 0 ? (
             <EmptyState>Корпуса не добавлены. Они также создаются при утверждении сметы, если в ней указан корпус.</EmptyState>
           ) : (
+            <div className="overflow-x-auto">
             <table className="table-base mb-3">
               <thead><tr><th>Код</th><th>Название</th><th className="text-right">Статей</th><th /></tr></thead>
               <tbody>
@@ -52,6 +53,7 @@ export default async function StructurePage({ params }: { params: Promise<{ proj
                 ))}
               </tbody>
             </table>
+            </div>
           )}
           {canManage && <ObjectForm action={upsertObjectAction.bind(null, projectId, null)} />}
         </Card>
@@ -60,6 +62,7 @@ export default async function StructurePage({ params }: { params: Promise<{ proj
           {project.stages.length === 0 ? (
             <EmptyState>Этапы не добавлены.</EmptyState>
           ) : (
+            <div className="overflow-x-auto">
             <table className="table-base mb-3">
               <thead><tr><th>Код</th><th>Этап</th><th>Корпус</th><th>Сроки (план)</th><th className="text-right">Статей</th><th /></tr></thead>
               <tbody>
@@ -90,12 +93,13 @@ export default async function StructurePage({ params }: { params: Promise<{ proj
                 ))}
               </tbody>
             </table>
+            </div>
           )}
           {canManage && <StageForm action={upsertStageAction.bind(null, projectId, null)} objects={objects} />}
         </Card>
       </div>
 
-      <div className="space-y-4">
+      <div className="min-w-0 space-y-4">
         <Card title="Параметры проекта">
           {canManage ? (
             <ProjectForm action={updateProjectAction.bind(null, projectId)} values={project} currencyLocked />

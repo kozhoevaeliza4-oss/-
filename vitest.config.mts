@@ -10,7 +10,8 @@ export default defineConfig({
     fileParallelism: false,
     env: {
       DATABASE_URL: process.env.TEST_DATABASE_URL ?? "postgresql://app:app@localhost:5432/construction_registry_test?schema=public",
-      STORAGE_DIR: path.resolve(import.meta.dirname, "storage/test"),
+      // отдельный каталог, вне рабочего хранилища: файлы тестов не попадают в резервные копии
+      STORAGE_DIR: path.resolve(import.meta.dirname, ".test-storage"),
     },
   },
   resolve: {

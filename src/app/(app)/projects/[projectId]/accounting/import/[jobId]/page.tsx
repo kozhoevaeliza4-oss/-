@@ -60,7 +60,7 @@ export default async function AccountingImportPage({ params, searchParams }: { p
             mapping={mapping}
           />
         </Card>
-        <div className="space-y-4 xl:col-span-2">
+        <div className="min-w-0 space-y-4 xl:col-span-2">
           <Card title="2. Проверка">
             {preview.mappingErrors.length ? <ul className="list-disc pl-5 text-sm text-red-700">{preview.mappingErrors.map((e) => <li key={e}>{e}</li>)}</ul> : (
               <div className="space-y-2 text-sm">

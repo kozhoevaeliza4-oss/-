@@ -25,6 +25,8 @@ export const ESTIMATE_EXTENSIONS = ["xlsx", "xlsm", "csv"];
 interface EstimateJobMapping {
   estimate: EstimateMapping;
   meta: { name: string; notes: string | null };
+  /** Отпечаток содержимого ячеек — для обнаружения повторной загрузки пересохранённого файла */
+  contentHash?: string | null;
 }
 
 export async function startEstimateImport(
@@ -34,10 +36,26 @@ export async function startEstimateImport(
 ): Promise<string> {
   const name = input.name.trim();
   if (!name) throw new UserError("Укажите название версии сметы", { name: "Укажите название" });
+  // Повторная загрузка определяется по байтам файла и по содержимому ячеек: та же смета, пересохранённая
+  // в Excel, имеет другой хэш файла (в xlsx записывается время сохранения), но то же содержимое
+  let early: Sheet[] | null = null;
+  let contentHash: string | null = null;
   if (input.file && typeof input.file !== "string" && input.file.size > 0) {
-    const sha = createHash("sha256").update(Buffer.from(await input.file.arrayBuffer())).digest("hex");
+    const buf = Buffer.from(await input.file.arrayBuffer());
+    const sha = createHash("sha256").update(buf).digest("hex");
+    try {
+      early = await parseTabular(buf, input.file.name);
+      contentHash = createHash("sha256").update(JSON.stringify(early.map((sh) => sh.rows))).digest("hex");
+    } catch {
+      early = null; // ошибка разбора будет показана ниже, после сохранения файла
+    }
     const prev = await prisma.importJob.findFirst({
-      where: { projectId, kind: "ESTIMATE", status: { in: ["PARSED", "CONFIRMED"] }, document: { sha256: sha } },
+      where: {
+        projectId,
+        kind: "ESTIMATE",
+        status: { in: ["PARSED", "CONFIRMED"] },
+        OR: [{ document: { sha256: sha } }, ...(contentHash ? [{ mapping: { path: ["contentHash"], equals: contentHash } }] : [])],
+      },
       include: { estimateVersion: true },
       orderBy: { createdAt: "desc" },
     });
@@ -53,7 +71,7 @@ export async function startEstimateImport(
   const doc = await saveUpload({ file: input.file, projectId, kind: "ESTIMATE", userId, allowed: ESTIMATE_EXTENSIONS });
   let sheets: Sheet[];
   try {
-    sheets = await parseTabular(doc.buffer, doc.originalName);
+    sheets = early ?? (await parseTabular(doc.buffer, doc.originalName));
   } catch (e) {
     const message = e instanceof ParseError ? e.message : "Не удалось разобрать файл";
     await prisma.importJob.create({
@@ -61,7 +79,7 @@ export async function startEstimateImport(
     });
     throw new UserError(message);
   }
-  const mapping: EstimateJobMapping = { estimate: guessEstimateMapping(sheets), meta: { name, notes: input.notes } };
+  const mapping: EstimateJobMapping = { estimate: guessEstimateMapping(sheets), meta: { name, notes: input.notes }, contentHash };
   const job = await prisma.importJob.create({
     data: {
       projectId,

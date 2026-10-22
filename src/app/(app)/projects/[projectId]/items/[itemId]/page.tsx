@@ -84,7 +84,7 @@ export default async function ItemPage({ params, searchParams }: { params: Promi
         </div>
       )}
 
-      <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-6">
+      <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-4 xl:grid-cols-6">
         <Stat label="Плановый объём" value={r.plannedQuantity ? `${fmtNum(r.plannedQuantity, 4)} ${item.unit ?? ""}` : "Нет данных"} hint={r.unitPrice ? `Цена: ${fmtMoney(r.unitPrice, cur)}` : undefined} />
         <Stat label="Плановая стоимость (действующая)" value={fmtMoney(r.plannedCost, cur, "Нет данных")} hint={r.baselinePlannedCost ? `Первоначальная: ${fmtMoney(r.baselinePlannedCost, cur)}` : "Нет в первоначальной смете"} href={`/projects/${projectId}/explain?metric=plannedCost&item=${itemId}${asOf ? `&asOf=${asOf}` : ""}`} />
         <Stat
@@ -105,7 +105,7 @@ export default async function ItemPage({ params, searchParams }: { params: Promi
       </div>
 
       <div className="grid gap-4 xl:grid-cols-3">
-        <div className="space-y-4 xl:col-span-2">
+        <div className="min-w-0 space-y-4 xl:col-span-2">
           <Card title="История физического выполнения">
             {item.progressRecords.length === 0 ? (
               <EmptyState>Выполнение ещё не вносилось.</EmptyState>

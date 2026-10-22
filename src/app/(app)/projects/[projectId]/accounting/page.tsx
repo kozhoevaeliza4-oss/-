@@ -28,16 +28,17 @@ export default async function AccountingPage({ params }: { params: Promise<{ pro
         subtitle={project.costMethodologyConfirmed ? "Методика учёта себестоимости согласована" : "Методика учёта не согласована: суммы показываются как «Импортированные затраты по 1С»"}
         actions={<><Link href={`${base}/transactions`} className="btn-primary">Операции</Link><Link href={`${base}/rules`} className="btn-secondary">Правила классификации</Link></>}
       />
-      <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-5">
+      <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-5">
         {(["UNCLASSIFIED", "PROPOSED", "CONFIRMED", "EXCLUDED"] as const).map((k) => (
           <Stat key={k} label={CLASSIFICATION_STATUS[k].label} value={st(k)?._count ?? 0} hint={fmtMoney(st(k)?._sum.amount?.toString() ?? null, project.currency)} href={`${base}/transactions?status=${k}`} tone={k === "UNCLASSIFIED" && (st(k)?._count ?? 0) > 0 ? "red" : k === "PROPOSED" && (st(k)?._count ?? 0) > 0 ? "yellow" : undefined} />
         ))}
         <Stat label="Затраты без статьи" value={unallocatedCost} hint="подтверждены, но не распределены" href={`${base}/transactions?unallocated=1`} tone={unallocatedCost ? "yellow" : undefined} />
       </div>
       <div className="grid gap-4 xl:grid-cols-3">
-        <div className="space-y-4 xl:col-span-2">
+        <div className="min-w-0 space-y-4 xl:col-span-2">
           <Card title="Подтверждённые операции по категориям">
             {byCategory.length === 0 ? <EmptyState>Подтверждённых операций нет.</EmptyState> : (
+              <div className="overflow-x-auto">
               <table className="table-base text-sm">
                 <thead><tr><th>Категория</th><th className="text-right">Операций</th><th className="text-right">Сумма</th><th>Учёт в себестоимости статей</th></tr></thead>
                 <tbody>
@@ -51,6 +52,7 @@ export default async function AccountingPage({ params }: { params: Promise<{ pro
                   ))}
                 </tbody>
               </table>
+              </div>
             )}
           </Card>
           <Card title="Журнал импорта 1С">
