@@ -1,0 +1,686 @@
+// Реестр строительных работ и контроль себестоимости — схема БД.
+//
+// Принципы:
+//  * Денежные значения — Decimal(18,2), объёмы и цены — Decimal(18,4), проценты — Decimal(9,4).
+//    Тип float для денег не используется.
+//  * NULL означает «нет данных». Ноль хранится только если он подтверждён.
+//  * Исходные данные не перезаписываются: версии смет, история выполнения, журнал аудита.
+//  * Каждая сумма имеет источник (документ / импорт / ручной ввод).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ───────────────────────────── Пользователи и доступ ─────────────────────────────
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  name         String
+  passwordHash String
+  // Системный администратор: управляет пользователями, ролями и всеми проектами.
+  isAdmin      Boolean   @default(false)
+  // Отзыв доступа сотрудника: false — вход запрещён, сессии удаляются.
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  lastLoginAt  DateTime?
+
+  sessions       Session[]
+  memberships    ProjectMember[]
+  auditLogs      AuditLog[]
+  progressRecords WorkProgressRecord[]
+  documents      Document[]
+  importJobs     ImportJob[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  // В БД хранится только SHA-256 от токена; сам токен — в httpOnly cookie.
+  tokenHash String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+// Роль — набор прав. Права настраиваемые (администратор может менять список).
+model Role {
+  id          String          @id @default(cuid())
+  code        String          @unique
+  name        String
+  description String?
+  permissions String[]
+  isSystem    Boolean         @default(false)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  members     ProjectMember[]
+}
+
+// Доступ выдаётся на конкретный проект. Доступ к одному проекту не даёт доступа к другим.
+model ProjectMember {
+  id        String   @id @default(cuid())
+  projectId String
+  userId    String
+  roleId    String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      Role     @relation(fields: [roleId], references: [id])
+  createdAt DateTime @default(now())
+
+  @@unique([projectId, userId])
+}
+
+// ───────────────────────────── Проектная структура ─────────────────────────────
+
+model Project {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  name        String
+  description String?
+  address     String?
+  // Базовая валюта проекта (ISO 4217). KGS — кыргызский сом.
+  currency    String   @default("KGS")
+  // Демонстрационный проект: данные тестовые, не являются реальными показателями.
+  isDemo      Boolean  @default(false)
+  isArchived  Boolean  @default(false)
+  // Подтверждена ли методика учёта фактической себестоимости по данным 1С (п. 5.5 ТЗ).
+  costMethodologyConfirmed Boolean @default(false)
+  costMethodologyNote      String?
+  // Подтверждена ли модель прогноза «факт + прогноз остатка» (п. 5.7 ТЗ).
+  forecastModelConfirmed   Boolean @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  members          ProjectMember[]
+  objects          ConstructionObject[]
+  stages           ConstructionStage[]
+  estimateVersions EstimateVersion[]
+  sections         EstimateSection[]
+  workItems        WorkItem[]
+  contracts        Contract[]
+  acts             Act[]
+  accountingImports AccountingImport[]
+  transactions     AccountingTransaction[]
+  payments         Payment[]
+  documents        Document[]
+  importJobs       ImportJob[]
+  auditLogs        AuditLog[]
+}
+
+// Корпус / объект строительства
+model ConstructionObject {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  code      String
+  name      String
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  stages    ConstructionStage[]
+  workItems WorkItem[]
+
+  @@unique([projectId, code])
+}
+
+// Этап строительства (может относиться ко всему проекту или к корпусу)
+model ConstructionStage {
+  id           String              @id @default(cuid())
+  projectId    String
+  project      Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  objectId     String?
+  object       ConstructionObject? @relation(fields: [objectId], references: [id], onDelete: SetNull)
+  code         String
+  name         String
+  sortOrder    Int                 @default(0)
+  plannedStart DateTime?           @db.Date
+  plannedEnd   DateTime?           @db.Date
+  createdAt    DateTime            @default(now())
+
+  workItems WorkItem[]
+
+  @@unique([projectId, code])
+}
+
+// ───────────────────────────── Смета ─────────────────────────────
+
+enum EstimateVersionStatus {
+  DRAFT      // загружена, ожидает подтверждения
+  ACTIVE     // текущая утверждённая версия
+  SUPERSEDED // заменена более новой версией (история)
+  REJECTED   // отклонена пользователем
+}
+
+model EstimateVersion {
+  id            String                @id @default(cuid())
+  projectId     String
+  project       Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  versionNumber Int
+  name          String
+  status        EstimateVersionStatus @default(DRAFT)
+  // Первая утверждённая версия — «первоначальная смета». Флаг не снимается.
+  isBaseline    Boolean               @default(false)
+  currency      String
+  notes         String?
+  documentId    String?
+  document      Document?             @relation(fields: [documentId], references: [id])
+  importJobId   String?               @unique
+  importJob     ImportJob?            @relation(fields: [importJobId], references: [id])
+  createdById   String?
+  createdAt     DateTime              @default(now())
+  approvedById  String?
+  approvedAt    DateTime?
+
+  lines EstimateLine[]
+
+  @@unique([projectId, versionNumber])
+}
+
+// Раздел сметы (на уровне проекта, стабилен между версиями)
+model EstimateSection {
+  id        String     @id @default(cuid())
+  projectId String
+  project   Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  code      String
+  name      String
+  sortOrder Int        @default(0)
+  workItems WorkItem[]
+  lines     EstimateLine[]
+
+  @@unique([projectId, code])
+}
+
+enum WorkItemOrigin {
+  ESTIMATE // создана из утверждённой сметы
+  MANUAL   // добавлена уполномоченным пользователем
+}
+
+enum MeasurementType {
+  QUANTITY // выполнение измеряется объёмом
+  PERCENT  // выполнение вводится процентом готовности
+}
+
+// Статья работ — центральная сущность реестра. Стабильный идентификатор,
+// по которому связываются договоры, АВР, факт и операции 1С.
+// Плановые значения хранятся по версиям смет в EstimateLine.
+model WorkItem {
+  id              String              @id @default(cuid())
+  projectId       String
+  project         Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  // Ключ сопоставления строк смет между версиями (корпус|раздел|код|...)
+  itemKey         String
+  code            String?
+  name            String
+  unit            String?
+  objectId        String?
+  object          ConstructionObject? @relation(fields: [objectId], references: [id], onDelete: SetNull)
+  stageId         String?
+  stage           ConstructionStage?  @relation(fields: [stageId], references: [id], onDelete: SetNull)
+  sectionId       String?
+  section         EstimateSection?    @relation(fields: [sectionId], references: [id], onDelete: SetNull)
+  origin          WorkItemOrigin      @default(ESTIMATE)
+  measurementType MeasurementType     @default(QUANTITY)
+  plannedStartDate DateTime?          @db.Date
+  plannedEndDate  DateTime?           @db.Date
+  actualEndDate   DateTime?           @db.Date
+  comment         String?
+  // Прогноз затрат на оставшиеся работы (ручной ввод), для п. 5.7
+  forecastRemainingCost Decimal?      @db.Decimal(18, 2)
+  forecastNote    String?
+  createdById     String?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  estimateLines   EstimateLine[]
+  progressRecords WorkProgressRecord[]
+  allocations     ContractWorkAllocation[]
+  actLines        ActLine[]
+  transactionAllocations TransactionAllocation[]
+
+  @@unique([projectId, itemKey])
+  @@index([projectId])
+}
+
+// Строка версии сметы: исходные плановые значения в том виде, как они были в документе.
+model EstimateLine {
+  id          String           @id @default(cuid())
+  versionId   String
+  version     EstimateVersion  @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  // До утверждения версии строка не связана со статьёй реестра
+  workItemId  String?
+  workItem    WorkItem?        @relation(fields: [workItemId], references: [id])
+  itemKey     String
+  lineNo      String?
+  code        String?
+  name        String
+  unit        String?
+  sectionId   String?
+  section     EstimateSection? @relation(fields: [sectionId], references: [id])
+  sectionCode String?
+  sectionName String?
+  objectCode  String?
+  stageCode   String?
+  quantity    Decimal?         @db.Decimal(18, 4)
+  unitPrice   Decimal?         @db.Decimal(18, 4)
+  // Итог из исходной сметы (если был). Используется как исходное значение плановой стоимости.
+  sourceTotal Decimal?         @db.Decimal(18, 2)
+  currency    String
+  // Источник: лист и строка исходного файла
+  sourceSheet String?
+  sourceRow   Int?
+  extra       Json?
+
+  @@unique([versionId, itemKey])
+  @@index([workItemId])
+}
+
+// ───────────────────────────── Договоры ─────────────────────────────
+
+model Contractor {
+  id        String     @id @default(cuid())
+  name      String
+  inn       String?    @unique
+  comment   String?
+  createdAt DateTime   @default(now())
+  contracts Contract[]
+  acts      Act[]
+  payments  Payment[]
+  transactionAllocations TransactionAllocation[]
+}
+
+enum ContractStatus {
+  UPLOADED_NEEDS_REVIEW // договор загружен, требуется проверка
+  ACTIVE                // подписан и действует
+  COMPLETED             // завершён
+  TERMINATED            // расторгнут
+  NEEDS_CLARIFICATION   // требует уточнения
+}
+
+model Contract {
+  id           String         @id @default(cuid())
+  projectId    String
+  project      Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  contractorId String?
+  contractor   Contractor?    @relation(fields: [contractorId], references: [id])
+  number       String?
+  date         DateTime?      @db.Date
+  subject      String?
+  objectText   String?
+  totalAmount  Decimal?       @db.Decimal(18, 2)
+  currency     String?
+  startDate    DateTime?      @db.Date
+  endDate      DateTime?      @db.Date
+  paymentTerms String?
+  status       ContractStatus @default(UPLOADED_NEEDS_REVIEW)
+  // Подтверждение проверки человеком (наличие файла не делает договор действующим)
+  verifiedById String?
+  verifiedAt   DateTime?
+  comment      String?
+  documentId   String?
+  document     Document?      @relation(fields: [documentId], references: [id])
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  amendments  ContractAmendment[]
+  allocations ContractWorkAllocation[]
+  acts        Act[]
+  payments    Payment[]
+  transactionAllocations TransactionAllocation[]
+}
+
+model ContractAmendment {
+  id           String    @id @default(cuid())
+  contractId   String
+  contract     Contract  @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  number       String?
+  date         DateTime? @db.Date
+  description  String?
+  // Изменение суммы договора (может быть отрицательным). NULL — сумма не меняется / не распознана.
+  amountDelta  Decimal?  @db.Decimal(18, 2)
+  newEndDate   DateTime? @db.Date
+  isSigned     Boolean   @default(false)
+  documentId   String?
+  document     Document? @relation(fields: [documentId], references: [id])
+  createdAt    DateTime  @default(now())
+}
+
+enum AllocationStatus {
+  PROPOSED  // предложено (автоматически или вручную), требует проверки
+  CONFIRMED // подтверждено пользователем
+  REJECTED
+}
+
+// Распределение договора по статьям. Один договор — много статей, одна статья — много договоров.
+model ContractWorkAllocation {
+  id          String           @id @default(cuid())
+  contractId  String
+  contract    Contract         @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  workItemId  String
+  workItem    WorkItem         @relation(fields: [workItemId], references: [id], onDelete: Cascade)
+  quantity    Decimal?         @db.Decimal(18, 4)
+  unit        String?
+  unitPrice   Decimal?         @db.Decimal(18, 4)
+  amount      Decimal?         @db.Decimal(18, 2)
+  status      AllocationStatus @default(PROPOSED)
+  source      String?
+  confirmedById String?
+  confirmedAt DateTime?
+  createdAt   DateTime         @default(now())
+
+  @@unique([contractId, workItemId])
+}
+
+// ───────────────────────────── Физическое выполнение ─────────────────────────────
+
+enum DataSource {
+  MANUAL
+  EXCEL_IMPORT
+  DOCUMENT
+  SYSTEM
+}
+
+// История выполнения. Записи не удаляются и не изменяются; текущее значение — последняя запись.
+model WorkProgressRecord {
+  id               String          @id @default(cuid())
+  workItemId       String
+  workItem         WorkItem        @relation(fields: [workItemId], references: [id], onDelete: Cascade)
+  // Дата, на которую зафиксировано выполнение
+  asOfDate         DateTime        @db.Date
+  method           MeasurementType
+  // Накопленный фактический подтверждённый объём (для QUANTITY)
+  quantity         Decimal?        @db.Decimal(18, 4)
+  // Подтверждённый процент готовности (для PERCENT)
+  percent          Decimal?        @db.Decimal(9, 4)
+  previousQuantity Decimal?        @db.Decimal(18, 4)
+  previousPercent  Decimal?        @db.Decimal(9, 4)
+  // Превышение планового объёма подтверждено (доп. объёмы / изменение проекта)
+  overrunConfirmed Boolean         @default(false)
+  comment          String
+  source           DataSource      @default(MANUAL)
+  documentId       String?
+  document         Document?       @relation(fields: [documentId], references: [id])
+  importJobId      String?
+  userId           String
+  user             User            @relation(fields: [userId], references: [id])
+  createdAt        DateTime        @default(now())
+
+  @@index([workItemId, createdAt])
+}
+
+// ───────────────────────────── АВР ─────────────────────────────
+
+enum ActStatus {
+  PREPARED    // подготовлен
+  ON_APPROVAL // на согласовании
+  SIGNED      // подписан
+  REJECTED    // отклонён
+}
+
+model Act {
+  id           String      @id @default(cuid())
+  projectId    String
+  project      Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  contractId   String?
+  contract     Contract?   @relation(fields: [contractId], references: [id])
+  contractorId String?
+  contractor   Contractor? @relation(fields: [contractorId], references: [id])
+  number       String
+  date         DateTime    @db.Date
+  periodFrom   DateTime?   @db.Date
+  periodTo     DateTime?   @db.Date
+  status       ActStatus   @default(PREPARED)
+  // Корректировочный акт (суммы строк могут быть отрицательными — сторно)
+  isCorrection Boolean     @default(false)
+  correctsActId String?
+  currency     String
+  signedAt     DateTime?
+  comment      String?
+  documentId   String?
+  document     Document?   @relation(fields: [documentId], references: [id])
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  lines ActLine[]
+}
+
+model ActLine {
+  id          String    @id @default(cuid())
+  actId       String
+  act         Act       @relation(fields: [actId], references: [id], onDelete: Cascade)
+  workItemId  String?
+  workItem    WorkItem? @relation(fields: [workItemId], references: [id])
+  description String?
+  unit        String?
+  quantity    Decimal?  @db.Decimal(18, 4)
+  unitPrice   Decimal?  @db.Decimal(18, 4)
+  amount      Decimal   @db.Decimal(18, 2)
+}
+
+// ───────────────────────────── 1С ─────────────────────────────
+
+enum AccountingImportStatus {
+  PREVIEW
+  CONFIRMED
+  CANCELLED
+  FAILED
+}
+
+model AccountingImport {
+  id          String                 @id @default(cuid())
+  projectId   String
+  project     Project                @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  documentId  String?
+  document    Document?              @relation(fields: [documentId], references: [id])
+  importJobId String?                @unique
+  importJob   ImportJob?             @relation(fields: [importJobId], references: [id])
+  account     String?
+  periodFrom  DateTime?              @db.Date
+  periodTo    DateTime?              @db.Date
+  rowCount    Int                    @default(0)
+  sourceTotal Decimal?               @db.Decimal(18, 2)
+  status      AccountingImportStatus @default(PREVIEW)
+  createdAt   DateTime               @default(now())
+
+  transactions AccountingTransaction[]
+}
+
+enum ClassificationStatus {
+  UNCLASSIFIED // требует классификации
+  CLASSIFIED   // сопоставлено и подтверждено
+  EXCLUDED     // исключено из расчёта (внутреннее перемещение, не относится к объекту и т.п.)
+}
+
+model AccountingTransaction {
+  id            String               @id @default(cuid())
+  projectId     String
+  project       Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  importId      String
+  import        AccountingImport     @relation(fields: [importId], references: [id], onDelete: Cascade)
+  rowNumber     Int
+  // Отпечаток операции для защиты от повторного учёта
+  fingerprint   String
+  date          DateTime?            @db.Date
+  documentNumber String?
+  account       String?
+  corrAccount   String?
+  debit         Decimal?             @db.Decimal(18, 2)
+  credit        Decimal?             @db.Decimal(18, 2)
+  // Сумма с исходным знаком
+  amount        Decimal?             @db.Decimal(18, 2)
+  currency      String?
+  counterparty  String?
+  objectText    String?
+  costItemText  String?
+  nomenclature  String?
+  quantity      Decimal?             @db.Decimal(18, 4)
+  comment       String?
+  analytics     Json?
+  raw           Json
+  classification ClassificationStatus @default(UNCLASSIFIED)
+  exclusionReason String?
+  createdAt     DateTime             @default(now())
+
+  allocations TransactionAllocation[]
+  payments    Payment[]
+
+  @@unique([projectId, fingerprint])
+}
+
+model TransactionAllocation {
+  id            String                @id @default(cuid())
+  transactionId String
+  transaction   AccountingTransaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  workItemId    String?
+  workItem      WorkItem?             @relation(fields: [workItemId], references: [id])
+  contractId    String?
+  contract      Contract?             @relation(fields: [contractId], references: [id])
+  contractorId  String?
+  contractor    Contractor?           @relation(fields: [contractorId], references: [id])
+  costType      String?
+  amount        Decimal               @db.Decimal(18, 2)
+  confirmedById String?
+  confirmedAt   DateTime?
+  createdAt     DateTime              @default(now())
+}
+
+model Payment {
+  id            String                 @id @default(cuid())
+  projectId     String
+  project       Project                @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  contractId    String?
+  contract      Contract?              @relation(fields: [contractId], references: [id])
+  contractorId  String?
+  contractor    Contractor?            @relation(fields: [contractorId], references: [id])
+  date          DateTime               @db.Date
+  amount        Decimal                @db.Decimal(18, 2)
+  currency      String
+  documentNumber String?
+  source        DataSource             @default(MANUAL)
+  transactionId String?
+  transaction   AccountingTransaction? @relation(fields: [transactionId], references: [id])
+  comment       String?
+  createdAt     DateTime               @default(now())
+}
+
+// ───────────────────────────── Документы, импорт, аудит ─────────────────────────────
+
+enum DocumentKind {
+  ESTIMATE
+  CONTRACT
+  AMENDMENT
+  ACT
+  ACCOUNTING
+  PROGRESS
+  PHOTO
+  OTHER
+}
+
+// Файл в приватном хранилище. Отдаётся только через маршрут с проверкой прав.
+model Document {
+  id           String       @id @default(cuid())
+  projectId    String?
+  project      Project?     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  kind         DocumentKind
+  originalName String
+  storagePath  String
+  mimeType     String
+  size         Int
+  sha256       String
+  uploadedById String
+  uploadedBy   User         @relation(fields: [uploadedById], references: [id])
+  createdAt    DateTime     @default(now())
+
+  estimateVersions EstimateVersion[]
+  contracts        Contract[]
+  amendments       ContractAmendment[]
+  progressRecords  WorkProgressRecord[]
+  acts             Act[]
+  accountingImports AccountingImport[]
+  importJobs       ImportJob[]
+  extractedFields  ExtractedField[]
+
+  @@index([projectId, sha256])
+}
+
+enum ImportKind {
+  ESTIMATE
+  CONTRACT
+  ACT
+  ACCOUNTING
+  PROGRESS
+}
+
+enum ImportJobStatus {
+  PARSED    // файл разобран, ждёт сопоставления/подтверждения
+  CONFIRMED // данные записаны
+  CANCELLED
+  FAILED
+}
+
+// Журнал обработки файлов: каждая загрузка проходит предпросмотр и подтверждение.
+model ImportJob {
+  id          String          @id @default(cuid())
+  projectId   String
+  project     Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  kind        ImportKind
+  status      ImportJobStatus @default(PARSED)
+  documentId  String?
+  document    Document?       @relation(fields: [documentId], references: [id])
+  // Выбранное сопоставление столбцов и параметры импорта
+  mapping     Json?
+  // Сводка результата (кол-во строк, суммы, предупреждения)
+  summary     Json?
+  error       String?
+  createdById String
+  createdBy   User            @relation(fields: [createdById], references: [id])
+  createdAt   DateTime        @default(now())
+  finishedAt  DateTime?
+
+  estimateVersion  EstimateVersion?
+  accountingImport AccountingImport?
+}
+
+// Источник извлечённого из документа значения (файл, страница/лист, фрагмент).
+model ExtractedField {
+  id          String    @id @default(cuid())
+  documentId  String
+  document    Document  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  entityType  String
+  entityId    String
+  field       String
+  value       String?
+  location    String?
+  fragment    String?
+  needsReview Boolean   @default(true)
+  reviewedById String?
+  reviewedAt  DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([entityType, entityId])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  projectId  String?
+  project    Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  action     String
+  entityType String
+  entityId   String?
+  before     Json?
+  after      Json?
+  comment    String?
+  createdAt  DateTime @default(now())
+
+  @@index([projectId, createdAt])
+  @@index([entityType, entityId])
+}
