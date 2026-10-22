@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/server/db";
 import { requireProjectAccess } from "@/lib/server/auth";
-import { Badge, Card, EmptyState } from "@/components/ui";
+import { Badge, Card, EmptyState, PageHeader } from "@/components/ui";
 import { fmtDate, isoDate } from "@/lib/format";
 import { ProjectForm } from "../../ProjectForm";
 import {
@@ -22,6 +22,8 @@ export default async function StructurePage({ params }: { params: Promise<{ proj
   const objects = project.objects.map((o) => ({ id: o.id, name: `${o.code} — ${o.name}` }));
 
   return (
+    <>
+    <PageHeader title="Структура и настройки" />
     <div className="grid gap-4 xl:grid-cols-2">
       <div className="space-y-4">
         <Card title="Корпуса / объекты">
@@ -120,5 +122,6 @@ export default async function StructurePage({ params }: { params: Promise<{ proj
         </Card>
       </div>
     </div>
+    </>
   );
 }

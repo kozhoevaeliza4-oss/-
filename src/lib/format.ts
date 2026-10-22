@@ -55,7 +55,8 @@ export function fmtDate(v: Date | string | null | undefined, empty = "—"): str
 export function fmtDateTime(v: Date | string | null | undefined, empty = "—"): string {
   if (!v) return empty;
   const d = typeof v === "string" ? new Date(v) : v;
-  return d.toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short" });
+  // Часовой пояс задаётся явно: иначе время зависит от настроек сервера (в контейнере — UTC)
+  return d.toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short", timeZone: process.env.APP_TIMEZONE || "Asia/Bishkek" });
 }
 
 /** Дата в формате YYYY-MM-DD для input[type=date] */

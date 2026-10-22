@@ -105,8 +105,10 @@ export function decodeText(buffer: Buffer): string {
 
 export function parseCsv(buffer: Buffer, name = "CSV"): Sheet {
   const text = decodeText(buffer);
-  const firstLine = text.split(/\r?\n/, 1)[0] ?? "";
-  const delimiter = [";", "\t", ","].sort((a, b) => count(firstLine, b) - count(firstLine, a))[0];
+  // Разделитель определяется по первым строкам, а не по одной: выгрузки 1С часто начинаются
+  // с заголовка отчёта («Карточка счёта 1636, октябрь»), где запятая не является разделителем
+  const head = text.split(/\r?\n/, 30).join("\n");
+  const delimiter = [";", "\t", ","].sort((a, b) => count(head, b) - count(head, a))[0];
   const rows: Cell[][] = [];
   let row: string[] = [];
   let field = "";

@@ -1,6 +1,7 @@
 import "server-only";
 import { ActStatus, Prisma } from "@prisma/client";
 import { z } from "zod";
+import { decimalField } from "../decimalField";
 import { prisma } from "../db";
 import { logAudit } from "../audit";
 import { UserError } from "../action";
@@ -18,19 +19,8 @@ const optDate = z
   .nullish()
   .transform((v) => (v ? new Date(v.slice(0, 10) + "T00:00:00Z") : null))
   .refine((d) => d === null || !isNaN(d.getTime()), "Некорректная дата");
-const decStr = (label: string, dp: number) =>
-  z
-    .union([z.string(), z.number()])
-    .nullish()
-    .transform((v, ctx) => {
-      if (v === null || v === undefined || String(v).trim() === "") return null;
-      const d = dec(String(v).replace(/[\s ]/g, "").replace(",", "."));
-      if (d === null) {
-        ctx.addIssue({ code: "custom", message: `${label}: введите число` });
-        return z.NEVER;
-      }
-      return d.toFixed(dp);
-    });
+// Строки корректировочных АВР могут быть отрицательными
+const decStr = (label: string, dp: number) => decimalField(label, dp, { allowNegative: true });
 
 export const actHeaderSchema = z.object({
   number: z.string().trim().min(1, "Укажите номер акта").max(100),

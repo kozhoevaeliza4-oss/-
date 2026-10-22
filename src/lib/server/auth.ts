@@ -123,7 +123,7 @@ export async function requireProjectAccess(projectId: string, permission: Permis
 /** Для серверных действий: бросает AccessDeniedError. */
 export async function assertProjectPermission(projectId: string, permission: Permission): Promise<ProjectAccess> {
   const user = await getCurrentUser();
-  if (!user) throw new AccessDeniedError("Требуется вход в систему");
+  if (!user) throw new AccessDeniedError("Сессия истекла или выполнен выход. Войдите снова в соседней вкладке — введённые данные останутся в форме.");
   const access = await getProjectAccess(projectId);
   if (!access || !access.can("project.view") || !access.can(permission)) throw new AccessDeniedError();
   return access;

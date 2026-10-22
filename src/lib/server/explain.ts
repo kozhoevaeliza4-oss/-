@@ -1,4 +1,5 @@
 import "server-only";
+import type { Permission } from "@/lib/permissions";
 import { prisma } from "./db";
 import { loadRegistry } from "./registry";
 import { loadContracts } from "./contracts";
@@ -24,6 +25,16 @@ export const EXPLAIN_METRICS = {
 } as const;
 
 export type ExplainMetric = keyof typeof EXPLAIN_METRICS;
+
+/** Права, необходимые для расшифровки (раскрывает первичные записи договоров, АВР, 1С). */
+export const EXPLAIN_REQUIRES: Partial<Record<ExplainMetric, Permission>> = {
+  actsSigned: "act.view",
+  actsAccepted: "act.view",
+  accountingCost: "accounting.view",
+  paid: "accounting.view",
+  contractsTotal: "contract.view",
+  uncovered: "contract.view",
+};
 
 export interface ExplainRecord {
   label: string;

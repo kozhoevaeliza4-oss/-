@@ -1,6 +1,7 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
+import { decimalField, parseUserDecimal } from "../decimalField";
 import { prisma } from "../db";
 import { logAudit } from "../audit";
 import { UserError } from "../action";
@@ -15,19 +16,7 @@ const optDate = z
   .optional()
   .transform((v) => (v ? new Date(v + "T00:00:00Z") : null))
   .refine((d) => d === null || !isNaN(d.getTime()), "Некорректная дата");
-const optMoney = z
-  .string()
-  .trim()
-  .optional()
-  .transform((v, ctx) => {
-    if (!v) return null;
-    const d = dec(v.replace(/\s/g, "").replace(",", "."));
-    if (d === null) {
-      ctx.addIssue({ code: "custom", message: "Некорректная сумма" });
-      return z.NEVER;
-    }
-    return d.toFixed(2);
-  });
+const optMoney = decimalField("Сумма", 2);
 
 /** Поля статьи, которые разрешено редактировать вручную. Плановые значения меняются только через версии сметы. */
 export const workItemEditSchema = z.object({
@@ -101,9 +90,10 @@ export interface ProgressInput {
 
 function parseDecimalInput(v: string | undefined, label: string): string | null {
   if (v === undefined || v.trim() === "") return null;
-  const d = dec(v.replace(/[\s ]/g, "").replace(",", "."));
-  if (d === null) throw new UserError(`${label}: введите число`);
-  return d.toString();
+  // Отрицательное значение пропускается сюда и отклоняется ниже с предметным сообщением
+  const r = parseUserDecimal(v, { dp: 4, allowNegative: true });
+  if ("error" in r) throw new UserError(r.error === "range" ? `${label}: слишком большое значение` : `${label}: введите число`);
+  return dec(r.value)!.toString();
 }
 
 /**
@@ -136,6 +126,8 @@ export async function recordProgress(
     if (percent === null) throw new UserError("Укажите процент готовности");
     const p = dec(percent)!;
     if (p.isNegative()) throw new UserError("Процент не может быть отрицательным");
+    // Превышение 100 % допустимо (подтверждается отдельно), но не произвольное число — колонка Decimal(9, 4)
+    if (p.gt(1000)) throw new UserError("Процент готовности не может превышать 1000 %");
   }
 
   // Превышение плана: подтвердить может только пользователь с соответствующим правом

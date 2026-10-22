@@ -239,7 +239,7 @@ export function computeRegistryRow(input: RegistryRowInput): RegistryRowResult {
   };
 }
 
-function rowLevel(flags: RowFlag[]): RowLevel {
+export function rowLevel(flags: { level: string }[]): RowLevel {
   if (flags.some((f) => f.level === "red")) return "red";
   if (flags.some((f) => f.level === "yellow")) return "yellow";
   if (flags.some((f) => f.level === "grey")) return "grey";

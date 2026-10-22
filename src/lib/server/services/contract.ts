@@ -1,6 +1,7 @@
 import "server-only";
 import { Prisma, ContractStatus, ContractSigningStatus } from "@prisma/client";
 import { z } from "zod";
+import { decimalField } from "../decimalField";
 import { prisma } from "../db";
 import { logAudit } from "../audit";
 import { UserError } from "../action";
@@ -20,20 +21,7 @@ const optDate = z
   .optional()
   .transform((v) => (v ? new Date(v + "T00:00:00Z") : null))
   .refine((d) => d === null || !isNaN(d.getTime()), "Некорректная дата");
-const optDecimal = (label: string, dp: number) =>
-  z
-    .string()
-    .trim()
-    .optional()
-    .transform((v, ctx) => {
-      if (!v) return null;
-      const d = dec(v.replace(/[\s ]/g, "").replace(",", "."));
-      if (d === null) {
-        ctx.addIssue({ code: "custom", message: `${label}: введите число` });
-        return z.NEVER;
-      }
-      return d.toFixed(dp);
-    });
+const optDecimal = (label: string, dp: number, allowNegative = false) => decimalField(label, dp, { allowNegative });
 
 /** Текущая сумма договора (исходная + подписанные доп. соглашения). */
 export async function contractAmountNow(contractId: string) {
@@ -238,7 +226,7 @@ export const amendmentSchema = z.object({
   number: optStr(100),
   date: optDate,
   description: optStr(3000),
-  amountDelta: optDecimal("Изменение суммы", 2),
+  amountDelta: optDecimal("Изменение суммы", 2, true),
   newEndDate: optDate,
   isSigned: z.boolean(),
 });

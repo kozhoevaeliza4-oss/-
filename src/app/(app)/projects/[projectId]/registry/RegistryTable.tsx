@@ -37,6 +37,7 @@ export function RegistryTable({
   options,
   canExport,
   methodologyConfirmed,
+  hiddenColumns = [],
 }: {
   projectId: string;
   currency: string;
@@ -51,7 +52,10 @@ export function RegistryTable({
   options: { objects: Opt[]; stages: Opt[]; sections: Opt[]; contractors: string[] };
   canExport: boolean;
   methodologyConfirmed: boolean;
+  /** Столбцы, недоступные по правам роли */
+  hiddenColumns?: string[];
 }) {
+  const allowedColumns = REGISTRY_COLUMNS.filter((c) => !hiddenColumns.includes(c.key));
   const router = useRouter();
   const pathname = usePathname();
   const [pending, startTransition] = useTransition();
@@ -99,7 +103,7 @@ export function RegistryTable({
   }, [q]);
 
   const query = filtersToQuery(filters);
-  const columns = REGISTRY_COLUMNS.filter((c) => visible.has(c.key));
+  const columns = allowedColumns.filter((c) => visible.has(c.key));
   const set = (k: keyof RegistryFilters) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setFilter(k, e.target.value);
   const activeCount = Object.values(filters).filter(Boolean).length;
   const pages = Math.max(1, Math.ceil(total / pageSize));
@@ -119,12 +123,14 @@ export function RegistryTable({
           <Sel label="Корпус" value={filters.object} onChange={set("object")} options={options.objects} noneLabel="Без корпуса" />
           <Sel label="Этап" value={filters.stage} onChange={set("stage")} options={options.stages} noneLabel="Без этапа" />
           <Sel label="Раздел сметы" value={filters.section} onChange={set("section")} options={options.sections} noneLabel="Без раздела" />
+          {!hiddenColumns.includes("contractor") && <>
           <Sel label="Подрядчик" value={filters.contractor} onChange={set("contractor")} options={options.contractors.map((c) => ({ id: c, name: c }))} noneLabel="Без подрядчика" />
           <Sel label="Наличие договора" value={filters.contract} onChange={set("contract")} options={[{ id: "covered", name: "Покрыто договором" }, { id: "uncovered", name: "Без договора" }, { id: "review", name: "Требует проверки" }]} />
           <Sel label="Статус договора" value={filters.coverage} onChange={set("coverage")} options={Object.entries(COVERAGE_LABELS).map(([id, name]) => ({ id, name }))} />
+          </>}
           <Sel label="Готовность" value={filters.progress} onChange={set("progress")} options={[{ id: "nodata", name: "Нет данных" }, { id: "0", name: "0 %" }, { id: "partial", name: "1–99 %" }, { id: "notdone", name: "Не завершено" }, { id: "done", name: "100 % и более" }, { id: "over", name: "Превышение объёма" }]} />
-          <Sel label="Отклонения" value={filters.deviation} onChange={set("deviation")} options={[{ id: "any", name: "Любые отклонения" }, { id: "overrun", name: "Превышение затрат" }, { id: "contractOver", name: "Договор выше плана" }, { id: "reconcile", name: "Расхождение с АВР" }, { id: "volume", name: "Превышение объёма" }]} />
-          <Sel label="АВР" value={filters.acts} onChange={set("acts")} options={[{ id: "signed", name: "Есть подписанные" }, { id: "pending", name: "Есть на согласовании" }, { id: "none", name: "Нет АВР" }]} />
+          {hiddenColumns.length === 0 && <Sel label="Отклонения" value={filters.deviation} onChange={set("deviation")} options={[{ id: "any", name: "Любые отклонения" }, { id: "overrun", name: "Превышение затрат" }, { id: "contractOver", name: "Договор выше плана" }, { id: "reconcile", name: "Расхождение с АВР" }, { id: "volume", name: "Превышение объёма" }]} />}
+          {!hiddenColumns.includes("actsAccepted") && <Sel label="АВР" value={filters.acts} onChange={set("acts")} options={[{ id: "signed", name: "Есть подписанные" }, { id: "pending", name: "Есть на согласовании" }, { id: "none", name: "Нет АВР" }]} />}
           <Sel label="Статус проверки" value={filters.level} onChange={set("level")} options={[{ id: "attention", name: "Требуют внимания (красные и жёлтые)" }, { id: "red", name: "Красный — существенные отклонения" }, { id: "yellow", name: "Жёлтый — требуется проверка" }, { id: "grey", name: "Серый — недостаточно данных" }, { id: "green", name: "Зелёный — подтверждено" }]} />
           <Sel label="Сроки" value={filters.overdue} onChange={set("overdue")} options={[{ id: "1", name: "Просроченные" }]} />
           <Sel label="В смете" value={filters.active} onChange={set("active")} options={[{ id: "1", name: "Действующие статьи" }, { id: "0", name: "Нет в действующей смете" }]} />
@@ -138,7 +144,7 @@ export function RegistryTable({
           <details className="relative">
             <summary className="btn-secondary btn-sm cursor-pointer list-none">Столбцы ({columns.length})</summary>
             <div className="absolute z-20 mt-1 max-h-96 w-72 overflow-auto rounded-md border border-slate-200 bg-white p-2 shadow-lg">
-              {REGISTRY_COLUMNS.map((c) => (
+              {allowedColumns.map((c) => (
                 <label key={c.key} className="flex items-center gap-2 py-0.5 text-xs"><input type="checkbox" checked={visible.has(c.key)} onChange={() => toggleColumn(c.key)} />{c.label}</label>
               ))}
             </div>

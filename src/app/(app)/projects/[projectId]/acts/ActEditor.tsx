@@ -55,7 +55,8 @@ export function ActEditor({
   submitLabel: string;
 }) {
   const [h, setH] = useState(h0);
-  const [lines, setLines] = useState<EditorLine[]>(l0.length ? l0 : [newLine()]);
+  // Ключ первой пустой строки детерминирован: он попадает в разметку и должен совпасть при гидратации
+  const [lines, setLines] = useState<EditorLine[]>(l0.length ? l0 : [{ ...newLine(), key: "initial" }]);
   const [state, formAction, pending] = useActionState(action, null);
   const num = (s: string) => (s.trim() === "" ? null : Number(s.replace(/\s/g, "").replace(",", ".")));
   const total = lines.reduce((s, l) => s + (num(l.amount) ?? 0), 0);
@@ -86,7 +87,7 @@ export function ActEditor({
   };
 
   return (
-    <form onSubmit={submit} className="space-y-4">
+    <form onSubmit={submit} method="post" className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-4">
         <label><span className="label">Номер акта *</span><input className="input" value={h.number} onChange={set("number")} required /></label>
         <label><span className="label">Дата *</span><input className="input" type="date" value={h.date} onChange={set("date")} required /></label>

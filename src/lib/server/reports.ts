@@ -1,4 +1,5 @@
 import "server-only";
+import type { Permission } from "@/lib/permissions";
 import { prisma } from "./db";
 import { loadRegistry, RegistryRowDTO } from "./registry";
 import { loadContracts } from "./contracts";
@@ -48,6 +49,8 @@ interface ReportDef {
   description: string;
   /** Какие фильтры имеют смысл для отчёта */
   filters: (keyof ReportFilters)[];
+  /** Права, без которых отчёт раскрыл бы закрытые данные (договоры, АВР, 1С, журнал, проблемы) */
+  requires: Permission[];
   build: (projectId: string, f: ReportFilters) => Promise<Omit<ReportResult, "title" | "currency">>;
 }
 
@@ -80,6 +83,7 @@ const METH_FACT = (confirmed: boolean) =>
 
 export const REPORTS: Record<string, ReportDef> = {
   coverage: {
+    requires: ["contract.view"],
     title: "Договорное покрытие сметы",
     description: "Статьи действующей сметы и их покрытие подтверждёнными договорами",
     filters: ["object", "stage", "q", "contractor", "status", "asOf"],
@@ -106,6 +110,7 @@ export const REPORTS: Record<string, ReportDef> = {
     },
   },
   "estimate-compare": {
+    requires: [],
     title: "Первоначальная и текущая смета",
     description: "Сравнение первоначальной (базовой) и действующей версий сметы",
     filters: ["q"],
@@ -126,6 +131,7 @@ export const REPORTS: Record<string, ReportDef> = {
     },
   },
   "plan-fact": {
+    requires: ["accounting.view"],
     title: "План-факт затрат",
     description: "Плановая стоимость выполненного и затраты по данным 1С",
     filters: ["object", "stage", "q", "contractor", "asOf"],
@@ -143,6 +149,7 @@ export const REPORTS: Record<string, ReportDef> = {
     },
   },
   progress: {
+    requires: [],
     title: "Физическая готовность",
     description: "Плановый и фактический объём, процент выполнения",
     filters: ["object", "stage", "q", "from", "to", "asOf"],
@@ -162,6 +169,7 @@ export const REPORTS: Record<string, ReportDef> = {
     },
   },
   "no-contract": {
+    requires: ["contract.view"],
     title: "Работы без договора",
     description: "Действующие статьи без подтверждённого действующего договора",
     filters: ["object", "stage", "q", "asOf"],
@@ -179,6 +187,7 @@ export const REPORTS: Record<string, ReportDef> = {
     },
   },
   unfinished: {
+    requires: [],
     title: "Невыполненные работы",
     description: "Остатки объёмов и плановой стоимости, сроки",
     filters: ["object", "stage", "q", "from", "to", "asOf"],
@@ -196,6 +205,7 @@ export const REPORTS: Record<string, ReportDef> = {
     },
   },
   acts: {
+    requires: ["act.view"],
     title: "Реестр АВР",
     description: "Акты выполненных работ со статусами и суммами",
     filters: ["from", "to", "contractor", "status", "q"],
@@ -223,6 +233,7 @@ export const REPORTS: Record<string, ReportDef> = {
     },
   },
   reconciliation: {
+    requires: ["act.view"],
     title: "Сверка физической готовности и АВР",
     description: "Расчётная стоимость выполненного и принятое по подписанным АВР",
     filters: ["object", "stage", "q", "contractor", "asOf"],
@@ -240,6 +251,7 @@ export const REPORTS: Record<string, ReportDef> = {
     },
   },
   contractors: {
+    requires: ["contract.view", "act.view", "accounting.view"],
     title: "Затраты по подрядчикам",
     description: "Договоры, распределение, АВР, оплаты и затраты 1С по каждому подрядчику",
     filters: ["contractor"],
@@ -275,6 +287,7 @@ export const REPORTS: Record<string, ReportDef> = {
     },
   },
   structure: {
+    requires: ["act.view", "accounting.view"],
     title: "Затраты по корпусам и этапам",
     description: "Свод по корпусам и этапам: план, выполнение, АВР, затраты",
     filters: ["object", "stage", "asOf"],
@@ -302,6 +315,7 @@ export const REPORTS: Record<string, ReportDef> = {
     },
   },
   "unclassified-1c": {
+    requires: ["accounting.view"],
     title: "Операции 1С без классификации",
     description: "Операции, требующие классификации или подтверждения",
     filters: ["from", "to", "q", "status"],
@@ -327,6 +341,7 @@ export const REPORTS: Record<string, ReportDef> = {
     },
   },
   forecast: {
+    requires: ["accounting.view"],
     title: "Прогноз стоимости завершения",
     description: "Первоначальная, текущая утверждённая стоимость и прогноз",
     filters: ["object", "stage", "q", "asOf"],
@@ -344,6 +359,7 @@ export const REPORTS: Record<string, ReportDef> = {
     },
   },
   audit: {
+    requires: ["audit.view"],
     title: "Журнал изменений",
     description: "Действия пользователей за период",
     filters: ["from", "to", "q"],
@@ -365,6 +381,7 @@ export const REPORTS: Record<string, ReportDef> = {
     },
   },
   critical: {
+    requires: ["issue.view"],
     title: "Реестр критических отклонений",
     description: "Открытые проблемы высокой и критической важности",
     filters: ["status", "q"],
@@ -385,6 +402,12 @@ export const REPORTS: Record<string, ReportDef> = {
     },
   },
 };
+
+/** Доступен ли отчёт роли: все требуемые права должны быть у пользователя. */
+export function reportAllowed(kind: string, can: (p: Permission) => boolean): boolean {
+  const def = REPORTS[kind];
+  return !!def && def.requires.every(can);
+}
 
 export async function buildReport(projectId: string, kind: string, f: ReportFilters): Promise<ReportResult | null> {
   const def = REPORTS[kind];

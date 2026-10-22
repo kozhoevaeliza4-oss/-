@@ -93,6 +93,43 @@ describe.runIf(enabled)("Тест 8: права доступа на сервер
     expect((await classifyAction(projectId, null, fc))?.ok).toBe(false);
   });
 
+  it("QA-02: роль без прав на 1С/договоры/АВР не получает эти данные в реестре, экспорте и отчётах", async () => {
+    const ExcelJS = (await import("exceljs")).default;
+    const role = await prisma.role.create({ data: { code: `exp-${Date.now()}`, name: "Только реестр и экспорт", permissions: ["project.view", "report.export"] } });
+    const u = await prisma.user.create({ data: { email: `exp-${Date.now()}@t.local`, name: "Экспорт", passwordHash: "x" } });
+    await prisma.projectMember.create({ data: { projectId, userId: u.id, roleId: role.id } });
+    await loginAs(u.id);
+
+    const { GET } = await import("@/app/api/projects/[projectId]/registry/export/route");
+    const res = await GET(new Request("http://x/api?contract=covered"), { params: Promise.resolve({ projectId }) });
+    expect(res.status).toBe(200);
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(await res.arrayBuffer());
+    const ws = wb.worksheets[0];
+    const header = (ws.getRow(6).values as unknown[]).map(String);
+    expect(header).toContain("Наименование работы");
+    for (const hidden of ["Затраты по данным 1С", "Оплачено", "Отклонение от плана", "Подрядчик", "Стоимость по подписанным АВР", "Статус договорного покрытия"]) expect(header).not.toContain(hidden);
+    // фильтр по наличию договора проигнорирован — статья без договора не отфильтрована
+    expect(String(ws.getCell("A3").value)).toMatch(/Фильтры: нет/);
+
+    const rep = await import("@/app/api/projects/[projectId]/reports/[kind]/route");
+    for (const kind of ["plan-fact", "coverage", "acts", "contractors", "unclassified-1c", "forecast", "structure", "reconciliation", "audit", "critical"]) {
+      const r = await rep.GET(new Request("http://x/api"), { params: Promise.resolve({ projectId, kind }) });
+      expect(r.status, kind).toBe(403);
+    }
+    const ok = await rep.GET(new Request("http://x/api"), { params: Promise.resolve({ projectId, kind: "progress" }) });
+    expect(ok.status).toBe(200);
+
+    const { redactRow } = await import("@/lib/server/visibility");
+    const { loadRegistry } = await import("@/lib/server/registry");
+    const row = (await loadRegistry(projectId)).rows[0];
+    const red = redactRow({ ...row, accountingCost: "100", actsAccepted: "50", contractors: ["ОсОО Тест"], flags: [{ level: "red", code: "COST_OVERRUN", text: "x" }] }, { accounting: false, contracts: false, acts: false });
+    expect(red).toMatchObject({ accountingCost: null, actsAccepted: null, contractors: [], coverageLabel: "нет доступа" });
+    expect(red.flags.map((f) => f.code)).not.toContain("COST_OVERRUN");
+    expect(red.level).not.toBe("red");
+    expect(red.hidden).toEqual(["accounting", "contracts", "acts"]);
+  });
+
   it("отозванный пользователь не может выполнить действие даже с действующей cookie", async () => {
     const u = await prisma.user.create({ data: { email: `rev-${Date.now()}@t.local`, name: "Уволен", passwordHash: "x", isAdmin: true } });
     await loginAs(u.id);

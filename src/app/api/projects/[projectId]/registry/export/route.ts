@@ -6,6 +6,7 @@ import { loadRegistry } from "@/lib/server/registry";
 import { applyRegistryFilters, filtersFromParams, filtersToQuery } from "@/lib/registryFilter";
 import { REGISTRY_COLUMNS } from "@/lib/registryColumns";
 import { logAudit } from "@/lib/server/audit";
+import { COLUMN_SCOPE, redactRow, stripHiddenFilters, visibilityOf } from "@/lib/server/visibility";
 
 export async function GET(req: Request, { params }: { params: Promise<{ projectId: string }> }) {
   const { projectId } = await params;
@@ -16,9 +17,11 @@ export async function GET(req: Request, { params }: { params: Promise<{ projectI
   if (!access.can("report.export")) return NextResponse.json({ error: "Недостаточно прав" }, { status: 403 });
 
   const url = new URL(req.url);
-  const filters = filtersFromParams(url.searchParams);
+  const vis = visibilityOf(access);
+  const filters = stripHiddenFilters(filtersFromParams(url.searchParams), vis);
   const data = await loadRegistry(projectId, { asOf: filters.asOf });
-  const rows = applyRegistryFilters(data.rows, filters);
+  const rows = applyRegistryFilters(data.rows.map((r) => redactRow(r, vis)), filters);
+  const COLUMNS = REGISTRY_COLUMNS.filter((c) => !COLUMN_SCOPE[c.key] || vis[COLUMN_SCOPE[c.key]]);
 
   const wb = new ExcelJS.Workbook();
   wb.creator = "Реестр строительных работ";
@@ -39,7 +42,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ projectI
         : "Методика учёта затрат 1С не согласована: суммы 1С — импортированные затраты, отклонения предварительные.",
   ]).font = { italic: true, color: { argb: "FF9A3412" } };
   ws.addRow(["Пустая ячейка означает отсутствие данных (не ноль)."]).font = { italic: true };
-  const header = ws.addRow(REGISTRY_COLUMNS.map((c) => c.label));
+  const header = ws.addRow(COLUMNS.map((c) => c.label));
   header.font = { bold: true };
   header.alignment = { wrapText: true, vertical: "middle" };
   header.eachCell((cell) => {
@@ -49,7 +52,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ projectI
 
   for (const r of rows) {
     ws.addRow(
-      REGISTRY_COLUMNS.map((c) => {
+      COLUMNS.map((c) => {
         const v = c.value(r);
         if (v === null) return null;
         if (c.kind === "money" || c.kind === "qty" || c.kind === "pct") return Number(v);
@@ -58,7 +61,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ projectI
       }),
     );
   }
-  REGISTRY_COLUMNS.forEach((c, i) => {
+  COLUMNS.forEach((c, i) => {
     const col = ws.getColumn(i + 1);
     col.width = c.width ?? 14;
     if (c.kind === "money") col.numFmt = "#,##0.00";
@@ -66,7 +69,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ projectI
     if (c.kind === "pct") col.numFmt = "0.0";
     if (c.kind === "date") col.numFmt = "dd.mm.yyyy";
   });
-  ws.autoFilter = { from: { row: 6, column: 1 }, to: { row: 6, column: REGISTRY_COLUMNS.length } };
+  ws.autoFilter = { from: { row: 6, column: 1 }, to: { row: 6, column: COLUMNS.length } };
 
   const buf = await wb.xlsx.writeBuffer();
   await logAudit({ userId: user.id, projectId, action: "registry.export", entityType: "Project", entityId: projectId, after: { rows: rows.length, filters } });

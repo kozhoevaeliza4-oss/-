@@ -20,6 +20,9 @@ export default async function DashboardPage({ params }: { params: Promise<{ proj
   const ex = (m: string) => `${p}/explain?metric=${m}`;
   const missing = (n: number) => (n > 0 ? `без данных: ${n} ст.` : undefined);
   const canAcc = access.can("accounting.view");
+  const canContracts = access.can("contract.view");
+  const canActs = access.can("act.view");
+  const NA = "Нет доступа";
 
   if (!d.data.currentVersion && d.data.rows.length === 0) {
     return (
@@ -31,6 +34,7 @@ export default async function DashboardPage({ params }: { params: Promise<{ proj
 
   return (
     <div className="space-y-5">
+      <h1 className="sr-only">Панель проекта</h1>
       <div className="card flex flex-wrap items-center gap-x-6 gap-y-1 px-4 py-2 text-xs text-slate-600">
         <span>Данные актуальны на <b>{fmtDateTime(d.data.computedAt)}</b></span>
         <span>Смета: {d.data.currentVersion ? `v${d.data.currentVersion.versionNumber} «${d.data.currentVersion.name}»` : "не утверждена"}</span>
@@ -49,9 +53,9 @@ export default async function DashboardPage({ params }: { params: Promise<{ proj
         <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
           <Stat label="Первоначальная утверждённая смета" value={fmtMoney(c.baselineTotal, cur, "Нет данных")} hint={d.data.baselineVersion ? `v${d.data.baselineVersion.versionNumber} · расшифровка` : undefined} href={ex("baselineCost")} />
           <Stat label="Текущая утверждённая смета" value={fmtMoney(c.currentTotal, cur, "Нет данных")} hint="расшифровка" href={ex("plannedCost")} />
-          <Stat label="Сумма действующих договоров" value={fmtMoney(c.contractsTotal, cur, "Нет данных")} hint={`${c.contractsCount} договоров${c.contractsIncomplete ? `, без суммы: ${c.contractsIncomplete}` : ""}`} href={ex("contractsTotal")} />
-          <Stat label="Договорное покрытие" value={fmtPct(c.coveragePercent, "Нет данных")} hint="по плановой стоимости статей" href={reg("contract=covered")} />
-          <Stat label="Работы без договора" value={fmtMoney(c.uncoveredValue, cur, "Нет данных")} hint={`${c.uncoveredCount} статей`} href={ex("uncovered")} tone={c.uncoveredCount ? "red" : undefined} />
+          {canContracts ? <Stat label="Сумма действующих договоров" value={fmtMoney(c.contractsTotal, cur, "Нет данных")} hint={`${c.contractsCount} договоров${c.contractsIncomplete ? `, без суммы: ${c.contractsIncomplete}` : ""}`} href={ex("contractsTotal")} /> : <Stat label="Сумма действующих договоров" value={NA} />}
+          <Stat label="Договорное покрытие" value={canContracts ? fmtPct(c.coveragePercent, "Нет данных") : NA} hint={canContracts ? "по плановой стоимости статей" : undefined} href={canContracts ? reg("contract=covered") : undefined} />
+          {canContracts ? <Stat label="Работы без договора" value={fmtMoney(c.uncoveredValue, cur, "Нет данных")} hint={`${c.uncoveredCount} статей`} href={ex("uncovered")} tone={c.uncoveredCount ? "red" : undefined} /> : <Stat label="Работы без договора" value={NA} />}
           <Stat
             label="Требуют проверки"
             value={c.reviewCount}
@@ -67,7 +71,7 @@ export default async function DashboardPage({ params }: { params: Promise<{ proj
         <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
           <Stat label="Средневзвешенная физическая готовность" value={fmtPct(c.weightedReadiness, "Нет данных")} hint={c.readinessDataCoverage ? `по статьям с данными (${fmtPct(c.readinessDataCoverage)} плановой стоимости)` : undefined} href={reg("progress=partial")} />
           <Stat label="Стоимость физически выполненного" value={fmtMoney(c.earned.sum, cur, "Нет данных")} hint={missing(c.earned.missing) ?? "расчётно, по расценкам сметы"} href={ex("earned")} />
-          <Stat label="Подписанные АВР" value={fmtMoney(c.actsSigned, cur, "Нет данных")} hint="расшифровка" href={ex("actsSigned")} />
+          {canActs ? <Stat label="Подписанные АВР" value={fmtMoney(c.actsSigned, cur, "Нет данных")} hint="расшифровка" href={ex("actsSigned")} /> : <Stat label="Подписанные АВР" value={NA} />}
           <Stat label="Остаток работ (плановая стоимость)" value={fmtMoney(c.remainingCost.sum, cur, "Нет данных")} hint={missing(c.remainingCost.missing)} href={reg("progress=notdone")} />
           <Stat label="Просроченные статьи" value={c.overdueCount} href={reg("overdue=1")} tone={c.overdueCount ? "red" : undefined} />
           <Stat label="Статьи, требующие внимания" value={d.data.rows.filter((r) => r.level === "red" || r.level === "yellow").length} hint="красные и жёлтые" href={reg("level=attention")} />
@@ -99,15 +103,15 @@ export default async function DashboardPage({ params }: { params: Promise<{ proj
         <Card title="Плановая и расчётная стоимость выполненного по этапам">
           <PairBars currency={cur} labels={["Плановая стоимость", "Выполнено (расчётно)"]} items={d.stages.map((s) => ({ key: s.id ?? "none", label: s.name, a: s.plannedCost === null ? null : Number(s.plannedCost), b: s.earned === null ? null : Number(s.earned), href: reg(s.id ? `stage=${s.id}` : "stage=none") }))} />
         </Card>
-        <Card title="Договорное покрытие">
+        {canContracts && <Card title="Договорное покрытие">
           <CoverageBar covered={c.coveredValue === null ? null : Number(c.coveredValue)} uncovered={c.uncoveredValue === null ? null : Number(c.uncoveredValue)} percent={c.coveragePercent} currency={cur} href={reg("contract=uncovered")} />
           <div className="mt-4">
             <RowList title="Крупнейшие работы без договора" rows={d.uncoveredTop} projectId={projectId} empty="Все действующие статьи покрыты договорами." value={(r) => fmtMoney(r.plannedCost, cur, "нет стоимости")} more={reg("contract=uncovered")} />
           </div>
-        </Card>
-        <Card title="Подписанные АВР по месяцам">
+        </Card>}
+        {canActs && <Card title="Подписанные АВР по месяцам">
           <MonthColumns points={d.actsByMonth} currency={cur} emptyText="Подписанных АВР нет" />
-        </Card>
+        </Card>}
         {canAcc && (
           <Card title="Динамика затрат по данным 1С (по месяцам)">
             <MonthColumns points={d.costByMonth} currency={cur} emptyText="Подтверждённых затрат нет" />
@@ -118,9 +122,9 @@ export default async function DashboardPage({ params }: { params: Promise<{ proj
             <BarList format={(v) => fmtMoney(v, cur)} items={d.sections.filter((s) => s.cost !== null).map((s) => ({ key: s.id ?? "none", label: s.name, value: Number(s.cost), href: reg(s.id ? `section=${s.id}` : "section=none"), hint: `план ${fmtMoney(s.plannedCost, cur)}` }))} emptyText="Затраты ещё не распределены по статьям" />
           </Card>
         )}
-        <Card title="Наиболее значительные отклонения затрат">
+        {canAcc && <Card title="Наиболее значительные отклонения затрат">
           <RowList title="" rows={d.topDeviations} projectId={projectId} empty="Превышений нет или нет данных о затратах." value={(r) => <span className="text-red-700">+{fmtMoney(r.variance, cur)}</span>} more={reg("deviation=overrun")} />
-        </Card>
+        </Card>}
         <Card title="Незавершённые работы с просроченным сроком">
           <RowList title="" rows={d.overdue} projectId={projectId} empty="Просроченных работ нет (или не заданы плановые сроки)." value={(r) => <>{fmtDate(r.plannedEndDate)} · {fmtPct(r.percentDisplay, "нет данных")}</>} more={reg("overdue=1")} />
         </Card>

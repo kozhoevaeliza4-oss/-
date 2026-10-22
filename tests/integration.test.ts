@@ -95,6 +95,9 @@ describe.runIf(enabled)("Интеграция: смета, реестр, вып�
     await updateWorkItem(userId, projectId, item.id, { measurementType: "PERCENT" });
     await recordProgress(userId, projectId, item.id, { asOfDate: "2026-10-01", percent: "20", comment: "этап 1" }, { canConfirmOverrun: false });
     await recordProgress(userId, projectId, item.id, { asOfDate: "2026-10-15", percent: "35", comment: "этап 2" }, { canConfirmOverrun: false });
+    // QA-12: недопустимые значения отклоняются понятным сообщением, а не ошибкой базы данных
+    await expect(recordProgress(userId, projectId, item.id, { asOfDate: "2026-10-16", percent: "1000000", comment: "x" }, { canConfirmOverrun: true })).rejects.toThrow(/не может превышать 1000/);
+    await expect(recordProgress(userId, projectId, item.id, { asOfDate: "2026-10-16", percent: "5e3", comment: "x" }, { canConfirmOverrun: true })).rejects.toThrow(/введите число/);
 
     const r = (await loadRegistry(projectId, { workItemId: item.id })).rows[0];
     expect(Number(r.percentDisplay)).toBe(35);

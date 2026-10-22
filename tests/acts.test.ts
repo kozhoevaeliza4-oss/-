@@ -52,6 +52,13 @@ describe.runIf(enabled)("Договоры и АВР", () => {
     contractId = await createContract(userId, projectId, { newContractorName: "ОсОО Тест-Монолит", contractorInn: "01234567891011", number: "Д-02/26", date: "2026-03-10", totalAmount: "5000000", currency: "KGS" });
   });
 
+  it("QA-11: договор с отрицательной или нечисловой суммой не создаётся", async () => {
+    const before = await prisma.contract.count({ where: { projectId } });
+    await expect(createContract(userId, projectId, { newContractorName: "ОсОО Негатив", number: "N-1", totalAmount: "-5000" })).rejects.toThrow(/отрицательн/);
+    await expect(createContract(userId, projectId, { newContractorName: "ОсОО Негатив", number: "N-2", totalAmount: "1e99" })).rejects.toThrow(/введите число/);
+    expect(await prisma.contract.count({ where: { projectId } })).toBe(before);
+  });
+
   it("договор не действует без проверки извлечённых полей; затем подтверждается", async () => {
     const c = await prisma.contract.findUniqueOrThrow({ where: { id: contractId } });
     const doc = await prisma.document.create({ data: { projectId, kind: "CONTRACT", originalName: "x.pdf", storagePath: "x", mimeType: "application/pdf", size: 1, sha256: "s", uploadedById: userId } });

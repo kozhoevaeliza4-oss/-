@@ -1,8 +1,10 @@
+import { ACTION_LABELS } from "@/lib/auditLabels";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/server/db";
 import { requireProjectAccess } from "@/lib/server/auth";
 import { loadRegistry } from "@/lib/server/registry";
+import { redactRow, visibilityOf } from "@/lib/server/visibility";
 import { Badge, Card, EmptyState, PageHeader, Stat, type Tone } from "@/components/ui";
 import { fmtDate, fmtDateTime, fmtMoney, fmtNum, fmtPct, isoDate } from "@/lib/format";
 import { dec } from "@/lib/calc/decimal";
@@ -45,7 +47,9 @@ export default async function ItemPage({ params, searchParams }: { params: Promi
       ? prisma.auditLog.findMany({ where: { entityType: "WorkItem", entityId: itemId }, orderBy: { createdAt: "desc" }, take: 30, include: { user: { select: { name: true } } } })
       : Promise.resolve([]),
   ]);
-  const r = data.rows[0];
+  const vis = visibilityOf(access);
+  const r = redactRow(data.rows[0], vis);
+  const NA = "Нет доступа";
   const cur = data.project.currency;
   const current = item.progressRecords[0];
   const currentValue = current ? (item.measurementType === "QUANTITY" ? current.quantity?.toString() : current.percent?.toString()) ?? null : null;
@@ -90,14 +94,14 @@ export default async function ItemPage({ params, searchParams }: { params: Promi
           tone={r.overrunQuantity && !r.overrunConfirmed ? "red" : undefined}
         />
         <Stat label="Расчётная стоимость выполненного" value={fmtMoney(r.earnedValue, cur, "Нет данных")} hint={r.unconfirmedOverrunValue ? `+${fmtMoney(r.unconfirmedOverrunValue, cur)} неподтверждённого превышения` : "по плановым расценкам · расшифровка"} href={`/projects/${projectId}/explain?metric=earned&item=${itemId}${asOf ? `&asOf=${asOf}` : ""}`} />
-        <Stat label="Принято по подписанным АВР" value={fmtMoney(r.actsAccepted, cur, "Нет данных")} hint={r.documentedPercent ? `Документально подтверждено ${fmtPct(r.documentedPercent)} от плана` : r.actsPending ? `На согласовании: ${fmtMoney(r.actsPending, cur)}` : "расшифровка"} href={`/projects/${projectId}/explain?metric=actsAccepted&item=${itemId}${asOf ? `&asOf=${asOf}` : ""}`} />
-        <Stat label={r.accountingCostLabel} value={fmtMoney(r.accountingCost, cur, "Нет данных")} hint="расшифровка" href={access.can("accounting.view") ? `/projects/${projectId}/explain?metric=accountingCost&item=${itemId}${asOf ? `&asOf=${asOf}` : ""}` : undefined} />
+        <Stat label="Принято по подписанным АВР" value={vis.acts ? fmtMoney(r.actsAccepted, cur, "Нет данных") : NA} hint={r.documentedPercent ? `Документально подтверждено ${fmtPct(r.documentedPercent)} от плана` : r.actsPending ? `На согласовании: ${fmtMoney(r.actsPending, cur)}` : "расшифровка"} href={!vis.acts ? undefined : `/projects/${projectId}/explain?metric=actsAccepted&item=${itemId}${asOf ? `&asOf=${asOf}` : ""}`} />
+        <Stat label={r.accountingCostLabel} value={vis.accounting ? fmtMoney(r.accountingCost, cur, "Нет данных") : NA} hint="расшифровка" href={access.can("accounting.view") ? `/projects/${projectId}/explain?metric=accountingCost&item=${itemId}${asOf ? `&asOf=${asOf}` : ""}` : undefined} />
         <Stat label="Остаток объёма" value={r.remainingQuantity ? `${fmtNum(r.remainingQuantity, 4)} ${item.unit ?? ""}` : "Нет данных"} tone={r.remainingQuantity && Number(r.remainingQuantity) < 0 ? "red" : undefined} />
         <Stat label="Остаток плановой стоимости" value={fmtMoney(r.remainingCost, cur, "Нет данных")} />
-        <Stat label="Выполнено − АВР" value={fmtMoney(r.earnedVsActs, cur, "Нет данных")} hint="Повод для сверки, не задолженность" tone={r.earnedVsActs && Math.abs(Number(r.earnedVsActs)) > 1 ? "yellow" : undefined} />
-        <Stat label="Отклонение (факт − план выполненного)" value={fmtMoney(r.variance, cur, "Нет данных")} hint={r.variance && !r.varianceComparable ? "предварительно" : undefined} tone={r.variance && Number(r.variance) > 0 ? "red" : undefined} />
-        <Stat label="Прогноз итоговой стоимости" value={r.forecast ? fmtMoney(r.forecast, cur) : "—"} hint={r.forecastReason ?? undefined} />
-        <Stat label="Договорное покрытие" value={r.coverageLabel} hint={r.contractAmount ? `По договорам: ${fmtMoney(r.contractAmount, cur)}` : undefined} />
+        <Stat label="Выполнено − АВР" value={vis.acts ? fmtMoney(r.earnedVsActs, cur, "Нет данных") : NA} hint="Повод для сверки, не задолженность" tone={r.earnedVsActs && Math.abs(Number(r.earnedVsActs)) > 1 ? "yellow" : undefined} />
+        <Stat label="Отклонение (факт − план выполненного)" value={vis.accounting ? fmtMoney(r.variance, cur, "Нет данных") : NA} hint={r.variance && !r.varianceComparable ? "предварительно" : undefined} tone={r.variance && Number(r.variance) > 0 ? "red" : undefined} />
+        <Stat label="Прогноз итоговой стоимости" value={!vis.accounting ? NA : r.forecast ? fmtMoney(r.forecast, cur) : "—"} hint={r.forecastReason ?? undefined} />
+        <Stat label="Договорное покрытие" value={vis.contracts ? r.coverageLabel : NA} hint={r.contractAmount ? `По договорам: ${fmtMoney(r.contractAmount, cur)}` : undefined} />
       </div>
 
       <div className="grid gap-4 xl:grid-cols-3">
@@ -161,7 +165,9 @@ export default async function ItemPage({ params, searchParams }: { params: Promi
           </Card>
 
           <Card title="Договоры по статье">
-            {item.allocations.length === 0 ? (
+            {!vis.contracts ? (
+              <EmptyState>Нет доступа к договорам (требуется право просмотра договоров).</EmptyState>
+            ) : item.allocations.length === 0 ? (
               <EmptyState>Договоры не сопоставлены. Статья считается непокрытой договором.</EmptyState>
             ) : (
               <table className="table-base text-xs">
@@ -190,7 +196,7 @@ export default async function ItemPage({ params, searchParams }: { params: Promi
                 <ul className="space-y-1 text-xs">
                   {audit.map((a) => (
                     <li key={a.id}>
-                      <span className="text-slate-500">{fmtDateTime(a.createdAt)}</span> · {a.user?.name ?? "система"} · <span className="font-mono">{a.action}</span>
+                      <span className="text-slate-500">{fmtDateTime(a.createdAt)}</span> · {a.user?.name ?? "система"} · <span className="font-mono">{ACTION_LABELS[a.action] ?? a.action}</span>
                       {a.comment && <> · {a.comment}</>}
                       {a.after && <span className="text-slate-500"> · {JSON.stringify(a.after).slice(0, 200)}</span>}
                     </li>

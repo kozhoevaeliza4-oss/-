@@ -1,3 +1,4 @@
+import { ACTION_LABELS } from "@/lib/auditLabels";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/server/db";
@@ -117,7 +118,7 @@ export default async function RecognitionPage({ params }: { params: Promise<{ pr
             <ul className="max-h-60 space-y-1 overflow-auto text-xs">
               {audit.map((a) => (
                 <li key={a.id}>
-                  <span className="text-slate-500">{fmtDateTime(a.createdAt)}</span> · {a.user?.name ?? "система"} · {a.action}
+                  <span className="text-slate-500">{fmtDateTime(a.createdAt)}</span> · {a.user?.name ?? "система"} · {ACTION_LABELS[a.action] ?? a.action}
                   {(a.after as { changes?: string[] } | null)?.changes?.length ? <ul className="ml-4 list-disc text-slate-600">{(a.after as { changes: string[] }).changes.slice(0, 10).map((c, k) => <li key={k}>{c}</li>)}</ul> : null}
                   {a.comment && <span className="text-slate-600"> — {a.comment}</span>}
                 </li>

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/server/db";
 import { getCurrentUser, getProjectAccess } from "@/lib/server/auth";
-import { buildReport, REPORT_FILTER_KEYS, REPORTS, ReportFilters } from "@/lib/server/reports";
+import { buildReport, REPORT_FILTER_KEYS, REPORTS, reportAllowed, ReportFilters } from "@/lib/server/reports";
 import { reportToPdf, reportToXlsx } from "@/lib/server/reportExport";
 import { contentDisposition } from "@/lib/server/http";
 import { logAudit } from "@/lib/server/audit";
@@ -15,8 +15,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ projectI
   if (!access?.can("project.view")) return NextResponse.json({ error: "Не найдено" }, { status: 404 });
   if (!access.can("report.export")) return NextResponse.json({ error: "Недостаточно прав" }, { status: 403 });
   if (!REPORTS[kind]) return NextResponse.json({ error: "Неизвестный отчёт" }, { status: 404 });
-  if (kind === "audit" && !access.can("audit.view")) return NextResponse.json({ error: "Недостаточно прав" }, { status: 403 });
-  if ((kind === "unclassified-1c" || kind === "contractors") && !access.can("accounting.view")) return NextResponse.json({ error: "Недостаточно прав" }, { status: 403 });
+  if (!reportAllowed(kind, access.can)) return NextResponse.json({ error: "Недостаточно прав" }, { status: 403 });
   const sp = new URL(req.url).searchParams;
   const format = sp.get("format") === "pdf" ? "pdf" : "xlsx";
   const f: ReportFilters = {};

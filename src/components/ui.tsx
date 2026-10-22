@@ -75,7 +75,8 @@ export function Stat({
   const body = (
     <div className={`card h-full p-3 ${href ? "transition hover:border-blue-400 hover:shadow" : ""}`}>
       <div className="text-xs font-medium text-slate-500">{label}</div>
-      <div className={`mt-1 text-lg font-semibold tabular-nums ${tone === "red" ? "text-red-700" : tone === "yellow" ? "text-amber-700" : "text-slate-900"}`}>
+      {/* Длинные суммы набираются мельче и переносятся, а не обрезаются краем карточки */}
+      <div className={`mt-1 font-semibold tabular-nums leading-tight [overflow-wrap:anywhere] ${typeof value === "string" && value.length > 14 ? "text-base" : "text-lg"} ${tone === "red" ? "text-red-700" : tone === "yellow" ? "text-amber-700" : "text-slate-900"}`}>
         {value}
       </div>
       {hint && <div className="mt-0.5 text-xs text-slate-500">{hint}</div>}

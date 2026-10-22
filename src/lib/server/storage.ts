@@ -73,7 +73,8 @@ export async function saveUpload(opts: {
   allowed: string[];
 }): Promise<SavedDocument> {
   const { file } = opts;
-  if (!file || typeof file === "string" || file.size === 0) throw new UserError("Выберите файл");
+  if (!file || typeof file === "string" || (file.size === 0 && !file.name)) throw new UserError("Выберите файл");
+  if (file.size === 0) throw new UserError(`Файл «${file.name}» пуст (0 байт) — выберите другой файл`);
   if (file.size > maxUploadBytes()) throw new UserError(`Файл больше ${Math.round(maxUploadBytes() / 1024 / 1024)} МБ`);
   const originalName = path.basename(file.name).slice(0, 255);
   const ext = originalName.toLowerCase().split(".").pop() ?? "";

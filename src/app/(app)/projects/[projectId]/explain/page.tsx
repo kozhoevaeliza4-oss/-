@@ -1,7 +1,7 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { requireProjectAccess } from "@/lib/server/auth";
-import { EXPLAIN_METRICS, ExplainMetric, explainMetric } from "@/lib/server/explain";
+import { EXPLAIN_METRICS, EXPLAIN_REQUIRES, ExplainMetric, explainMetric } from "@/lib/server/explain";
 import { prisma } from "@/lib/server/db";
 import { Badge, Card, EmptyState, PageHeader } from "@/components/ui";
 import { fmtDate, fmtMoney } from "@/lib/format";
@@ -12,7 +12,8 @@ export default async function ExplainPage({ params, searchParams }: { params: Pr
   const access = await requireProjectAccess(projectId);
   const metric = (sp.metric ?? "plannedCost") as ExplainMetric;
   if (!(metric in EXPLAIN_METRICS)) notFound();
-  if ((metric === "accountingCost" || metric === "paid") && !access.can("accounting.view")) notFound();
+  const required = EXPLAIN_REQUIRES[metric];
+  if (required && !access.can(required)) redirect("/forbidden");
   const item = sp.item ? await prisma.workItem.findFirst({ where: { id: sp.item, projectId } }) : null;
   const e = await explainMetric(projectId, metric, { workItemId: item?.id, asOf: sp.asOf });
   return (
@@ -23,7 +24,7 @@ export default async function ExplainPage({ params, searchParams }: { params: Pr
         actions={<Link href={item ? `/projects/${projectId}/items/${item.id}` : `/projects/${projectId}`} className="btn-secondary">Назад</Link>}
       />
       <div className="mb-3 flex flex-wrap gap-1 text-xs">
-        {(Object.keys(EXPLAIN_METRICS) as ExplainMetric[]).map((m) => (
+        {(Object.keys(EXPLAIN_METRICS) as ExplainMetric[]).filter((m) => !EXPLAIN_REQUIRES[m] || access.can(EXPLAIN_REQUIRES[m]!)).map((m) => (
           <Link key={m} href={`?metric=${m}${item ? `&item=${item.id}` : ""}${sp.asOf ? `&asOf=${sp.asOf}` : ""}`} className={`rounded border px-2 py-1 ${m === metric ? "border-blue-600 bg-blue-50" : "border-slate-200 bg-white"}`}>{EXPLAIN_METRICS[m]}</Link>
         ))}
       </div>

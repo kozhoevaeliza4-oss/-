@@ -5,6 +5,7 @@ import { loadRegistry } from "@/lib/server/registry";
 import { applyRegistryFilters, filtersFromParams, sortRegistry } from "@/lib/registryFilter";
 import { REGISTRY_COLUMNS } from "@/lib/registryColumns";
 import { Decimal } from "@/lib/calc/decimal";
+import { COLUMN_SCOPE, redactRow, stripHiddenFilters, visibilityOf } from "@/lib/server/visibility";
 import { PageHeader } from "@/components/ui";
 import { fmtDateTime } from "@/lib/format";
 import { RegistryTable } from "./RegistryTable";
@@ -19,13 +20,17 @@ export default async function RegistryPage({
   const { projectId } = await params;
   const access = await requireProjectAccess(projectId);
   const sp = await searchParams;
-  const filters = filtersFromParams(sp);
+  const vis = visibilityOf(access);
+  const filters = stripHiddenFilters(filtersFromParams(sp), vis);
   const [data, objects, stages, sections] = await Promise.all([
     loadRegistry(projectId, { asOf: filters.asOf }),
     prisma.constructionObject.findMany({ where: { projectId }, orderBy: [{ sortOrder: "asc" }, { code: "asc" }] }),
     prisma.constructionStage.findMany({ where: { projectId }, orderBy: [{ sortOrder: "asc" }, { code: "asc" }] }),
     prisma.estimateSection.findMany({ where: { projectId }, orderBy: { sortOrder: "asc" } }),
   ]);
+  // Данные без прав доступа удаляются на сервере до фильтрации и подсчёта итогов
+  data.rows = data.rows.map((r) => redactRow(r, vis));
+  const hiddenColumns = Object.entries(COLUMN_SCOPE).filter(([, scope]) => !vis[scope]).map(([k]) => k);
   const contractors = [...new Set(data.rows.flatMap((r) => r.contractors))].sort((a, b) => a.localeCompare(b, "ru"));
   // Фильтрация, сортировка, итоги и пагинация — на сервере
   const sortParam = typeof sp.sort === "string" ? sp.sort : "";
@@ -87,6 +92,7 @@ export default async function RegistryPage({
           contractors,
         }}
         canExport={access.can("report.export")}
+        hiddenColumns={hiddenColumns}
         methodologyConfirmed={data.project.costMethodologyConfirmed}
       />
     </>

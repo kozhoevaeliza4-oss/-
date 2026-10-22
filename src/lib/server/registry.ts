@@ -66,6 +66,8 @@ export interface RegistryRowDTO {
   level: RowLevel;
   levelLabel: string;
   flags: { level: string; code: string; text: string }[];
+  /** Группы данных, скрытые по правам доступа: accounting | contracts | acts */
+  hidden?: string[];
 }
 
 export interface RegistryData {

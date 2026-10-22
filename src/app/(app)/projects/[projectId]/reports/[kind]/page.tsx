@@ -1,8 +1,8 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/server/db";
 import { requireProjectAccess } from "@/lib/server/auth";
-import { buildReport, REPORT_FILTER_KEYS, REPORTS, ReportFilters } from "@/lib/server/reports";
+import { buildReport, REPORT_FILTER_KEYS, REPORTS, reportAllowed, ReportFilters } from "@/lib/server/reports";
 import { Card, EmptyState, PageHeader } from "@/components/ui";
 import { fmtDate, fmtMoney, fmtNum, fmtPct } from "@/lib/format";
 import { ACT_STATUS, CLASSIFICATION_STATUS, ISSUE_STATUS } from "@/lib/labels";
@@ -14,7 +14,8 @@ export default async function ReportPage({ params, searchParams }: { params: Pro
   const sp = await searchParams;
   const def = REPORTS[kind];
   if (!def) notFound();
-  const access = await requireProjectAccess(projectId, kind === "audit" ? "audit.view" : kind === "unclassified-1c" || kind === "contractors" ? "accounting.view" : "project.view");
+  const access = await requireProjectAccess(projectId);
+  if (!reportAllowed(kind, access.can)) redirect("/forbidden");
   const f: ReportFilters = {};
   for (const k of REPORT_FILTER_KEYS) if (sp[k]) f[k] = sp[k];
   const [report, objects, stages, contractors] = await Promise.all([

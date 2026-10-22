@@ -9,6 +9,8 @@ import { fmtDateTime, fmtMoney } from "@/lib/format";
 import { ISSUE_SEVERITY, ISSUE_STATUS } from "@/lib/labels";
 import { updateIssueAction } from "../actions";
 
+const ISSUE_EVENT_LABELS: Record<string, string> = { detected: "обнаружено проверкой", resolved: "устранено (данные исправлены)", reopened: "открыто повторно", assigned: "назначен ответственный", comment: "комментарий", status: "изменён статус" };
+
 export default async function IssuePage({ params }: { params: Promise<{ projectId: string; issueId: string }> }) {
   const { projectId, issueId } = await params;
   const access = await requireProjectAccess(projectId, "issue.view");
@@ -60,7 +62,7 @@ export default async function IssuePage({ params }: { params: Promise<{ projectI
       <Card title="История решения" className="mt-4">
         <ul className="space-y-1 text-sm">
           {i.events.map((e) => (
-            <li key={e.id}><span className="text-slate-500">{fmtDateTime(e.createdAt)}</span> · {e.user?.name ?? "система"} · {e.fromStatus && e.toStatus ? `${ISSUE_STATUS[e.fromStatus].label} → ${ISSUE_STATUS[e.toStatus].label}` : e.toStatus ? ISSUE_STATUS[e.toStatus].label : e.action}{e.comment && <> — {e.comment}</>}</li>
+            <li key={e.id}><span className="text-slate-500">{fmtDateTime(e.createdAt)}</span> · {e.user?.name ?? "система"} · {e.fromStatus && e.toStatus ? `${ISSUE_STATUS[e.fromStatus].label} → ${ISSUE_STATUS[e.toStatus].label}` : e.toStatus ? ISSUE_STATUS[e.toStatus].label : (ISSUE_EVENT_LABELS[e.action] ?? e.action)}{e.comment && <> — {e.comment}</>}</li>
           ))}
         </ul>
       </Card>

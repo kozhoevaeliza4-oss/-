@@ -51,6 +51,8 @@ export function ActionForm({
   return (
     <form
       ref={ref}
+      // POST: даже если JavaScript не загрузился, введённые данные (в т.ч. пароль) не попадут в адресную строку
+      method="post"
       className={className}
       onSubmit={(e) => {
         e.preventDefault();

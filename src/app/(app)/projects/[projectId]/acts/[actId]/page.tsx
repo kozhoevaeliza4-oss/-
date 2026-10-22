@@ -1,3 +1,4 @@
+import { ACTION_LABELS } from "@/lib/auditLabels";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/server/db";
@@ -178,7 +179,7 @@ export default async function ActPage({ params, searchParams }: { params: Promis
           </Card>
           <Card title="Журнал">
             <ul className="max-h-72 space-y-1 overflow-auto text-xs">
-              {audit.map((a) => <li key={a.id}><span className="text-slate-500">{fmtDateTime(a.createdAt)}</span> · {a.user?.name ?? "система"} · {a.action}{a.comment && ` — ${a.comment}`}</li>)}
+              {audit.map((a) => <li key={a.id}><span className="text-slate-500">{fmtDateTime(a.createdAt)}</span> · {a.user?.name ?? "система"} · {ACTION_LABELS[a.action] ?? a.action}{a.comment && ` — ${a.comment}`}</li>)}
             </ul>
           </Card>
         </div>

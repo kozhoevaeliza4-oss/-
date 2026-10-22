@@ -18,6 +18,13 @@ const CSV = [
 const sheets = () => [parseCsv(iconv.encode(CSV, "win1251"))];
 
 describe("Импорт 1С", () => {
+  it("QA: заголовок отчёта с запятой не сбивает определение разделителя", () => {
+    const csv = CSV.replace("Карточка счета 1636 за октябрь 2026", "Карточка счета 1636, октябрь 2026, ООО Пример");
+    const sheet = parseCsv(iconv.encode(csv, "win1251"));
+    expect(sheet.rows[1]).toContain("Счет Дт");
+    expect(sheet.rows[2]).toContain("ОсОО Тест-Монолит");
+  });
+
   it("определяет столбцы и разбирает строки", () => {
     const m = guessAccountingMapping(sheets());
     expect(m.headerRow).toBe(2);

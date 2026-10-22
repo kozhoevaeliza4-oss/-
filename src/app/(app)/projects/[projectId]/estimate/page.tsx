@@ -2,7 +2,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/server/db";
 import { requireProjectAccess } from "@/lib/server/auth";
 import { maxUploadBytes } from "@/lib/server/storage";
-import { Badge, Card, EmptyState } from "@/components/ui";
+import { Badge, Card, EmptyState, PageHeader } from "@/components/ui";
 import { fmtDateTime, fmtMoney } from "@/lib/format";
 import { dec, Decimal } from "@/lib/calc/decimal";
 import { plannedCost } from "@/lib/calc/workItem";
@@ -43,6 +43,8 @@ export default async function EstimatePage({ params }: { params: Promise<{ proje
   );
 
   return (
+    <>
+    <PageHeader title="Смета" />
     <div className="grid gap-4 xl:grid-cols-3">
       <div className="space-y-4 xl:col-span-2">
         <Card
@@ -160,5 +162,6 @@ export default async function EstimatePage({ params }: { params: Promise<{ proje
         </Card>
       </div>
     </div>
+    </>
   );
 }
