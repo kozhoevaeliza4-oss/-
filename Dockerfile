@@ -27,6 +27,9 @@ COPY --from=build /app/prisma ./prisma
 COPY --from=build /app/assets ./assets
 COPY --from=build /app/scripts ./scripts
 COPY --from=build /app/next.config.ts ./next.config.ts
+# исходники и tsconfig нужны командам db:seed / db:demo (tsx импортирует src/lib)
+COPY --from=build /app/src ./src
+COPY --from=build /app/tsconfig.json ./tsconfig.json
 RUN mkdir -p /data/storage && chown -R node:node /data /app
 USER node
 VOLUME ["/data/storage"]

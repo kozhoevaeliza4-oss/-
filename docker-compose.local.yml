@@ -1,0 +1,38 @@
+# Запуск программы целиком на своём компьютере: docker compose -f docker-compose.local.yml up -d --build
+# Открыть: http://localhost:3000 · данные хранятся в томах Docker (pgdata-local, storage-local)
+name: construction-registry
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: construction_registry
+    volumes:
+      - pgdata-local:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d construction_registry"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+  app:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://app:app@db:5432/construction_registry?schema=public
+      # локально без HTTPS: cookie без флага secure (только для своего компьютера, не для сервера)
+      COOKIE_SECURE: "false"
+      SEED_ADMIN_EMAIL: admin@example.local
+      SEED_ADMIN_PASSWORD: change-me-please
+      APP_TIMEZONE: Asia/Bishkek
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - storage-local:/data/storage
+    restart: unless-stopped
+volumes:
+  pgdata-local:
+  storage-local:

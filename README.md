@@ -48,8 +48,11 @@ npm run dev                        # http://localhost:3000
 
 Продакшен: `npm run build && npm run start` за HTTPS-прокси. Не запускайте `next dev` в каталоге с production-сборкой — он перезаписывает `.next`.
 
-Docker: `docker build -t construction-registry .` и запуск с `DATABASE_URL`, томом для `/data/storage` и HTTPS-прокси перед контейнером;
-после первого запуска — `docker exec <контейнер> npm run db:seed`. (Сборка образа в среде аудита не проверялась — см. отчёт.)
+**На своём компьютере (Docker, проще всего):** пошаговая инструкция — [`ЗАПУСК_НА_КОМПЬЮТЕРЕ.md`](ЗАПУСК_НА_КОМПЬЮТЕРЕ.md):
+`docker compose -f docker-compose.local.yml up -d --build`, затем `docker compose -f docker-compose.local.yml exec app npx prisma db seed`.
+
+На сервере: образ из `Dockerfile` с `DATABASE_URL`, томом для `/data/storage` и HTTPS-прокси перед контейнером; после первого запуска —
+`npx prisma db seed` внутри контейнера.
 
 ### Переменные окружения
 
