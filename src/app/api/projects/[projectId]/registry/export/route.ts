@@ -17,7 +17,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ projectI
 
   const url = new URL(req.url);
   const filters = filtersFromParams(url.searchParams);
-  const data = await loadRegistry(projectId);
+  const data = await loadRegistry(projectId, { asOf: filters.asOf });
   const rows = applyRegistryFilters(data.rows, filters);
 
   const wb = new ExcelJS.Workbook();

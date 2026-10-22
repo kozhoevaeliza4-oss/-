@@ -56,7 +56,9 @@ export function ActionForm({
         e.preventDefault();
         if (pending) return;
         if (confirm && !window.confirm(confirm)) return;
-        const fd = new FormData(e.currentTarget);
+        // учитываем нажатую кнопку (name/value), если у формы несколько действий
+        const submitter = (e.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
+        const fd = new FormData(e.currentTarget, submitter && submitter.name ? submitter : undefined);
         startTransition(() => formAction(fd));
       }}
     >

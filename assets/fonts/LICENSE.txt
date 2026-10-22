@@ -1,0 +1,3 @@
+Шрифты DejaVu (DejaVuSans.ttf, DejaVuSans-Bold.ttf) используются для экспорта отчётов в PDF.
+Лицензия: свободная лицензия шрифтов DejaVu (на основе Bitstream Vera Fonts License), разрешающая
+использование, копирование и распространение. https://dejavu-fonts.github.io/License.html

@@ -21,8 +21,9 @@ const CONTRACT_STATUS: Record<string, string> = {
   NEEDS_CLARIFICATION: "Требует уточнения",
 };
 
-export default async function ItemPage({ params }: { params: Promise<{ projectId: string; itemId: string }> }) {
+export default async function ItemPage({ params, searchParams }: { params: Promise<{ projectId: string; itemId: string }>; searchParams: Promise<{ asOf?: string }> }) {
   const { projectId, itemId } = await params;
+  const { asOf } = await searchParams;
   const access = await requireProjectAccess(projectId);
   const item = await prisma.workItem.findFirst({
     where: { id: itemId, projectId },
@@ -37,7 +38,7 @@ export default async function ItemPage({ params }: { params: Promise<{ projectId
   });
   if (!item) notFound();
   const [data, objects, stages, audit] = await Promise.all([
-    loadRegistry(projectId, { workItemId: itemId }),
+    loadRegistry(projectId, { workItemId: itemId, asOf: asOf || null }),
     prisma.constructionObject.findMany({ where: { projectId }, orderBy: { code: "asc" } }),
     prisma.constructionStage.findMany({ where: { projectId }, orderBy: { code: "asc" } }),
     access.can("audit.view")
@@ -62,6 +63,12 @@ export default async function ItemPage({ params }: { params: Promise<{ projectId
         actions={<><Badge tone={LEVEL_TONE[r.level]}>{r.levelLabel}</Badge><Link href={`/projects/${projectId}/registry`} className="btn-secondary">К реестру</Link></>}
       />
 
+      <form className="mb-3 flex flex-wrap items-end gap-2 text-sm">
+        <label><span className="label">Состояние статьи на дату</span><input type="date" name="asOf" defaultValue={asOf} max={new Date().toISOString().slice(0, 10)} className="input" /></label>
+        <button className="btn-secondary btn-sm">Показать</button>
+        {asOf && <Link className="btn-secondary btn-sm" href="?">Текущее состояние</Link>}
+        {asOf && <span className="text-blue-800">Показатели на {fmtDate(asOf)} — по датам документов (смета, утверждённая к дате; выполнение на дату; акты, подписанные к дате)</span>}
+      </form>
       {r.flags.length > 0 && (
         <div className="mb-4 card p-3">
           <div className="mb-1 text-xs font-semibold text-slate-600">Замечания</div>
@@ -75,16 +82,16 @@ export default async function ItemPage({ params }: { params: Promise<{ projectId
 
       <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-6">
         <Stat label="Плановый объём" value={r.plannedQuantity ? `${fmtNum(r.plannedQuantity, 4)} ${item.unit ?? ""}` : "Нет данных"} hint={r.unitPrice ? `Цена: ${fmtMoney(r.unitPrice, cur)}` : undefined} />
-        <Stat label="Плановая стоимость (действующая)" value={fmtMoney(r.plannedCost, cur, "Нет данных")} hint={r.baselinePlannedCost ? `Первоначальная: ${fmtMoney(r.baselinePlannedCost, cur)}` : "Нет в первоначальной смете"} />
+        <Stat label="Плановая стоимость (действующая)" value={fmtMoney(r.plannedCost, cur, "Нет данных")} hint={r.baselinePlannedCost ? `Первоначальная: ${fmtMoney(r.baselinePlannedCost, cur)}` : "Нет в первоначальной смете"} href={`/projects/${projectId}/explain?metric=plannedCost&item=${itemId}${asOf ? `&asOf=${asOf}` : ""}`} />
         <Stat
           label="Физическая готовность"
           value={r.percentDisplay ? fmtPct(r.percentDisplay) : "Нет данных"}
           hint={r.overrunQuantity ? `Факт ${fmtPct(r.percentRaw)}; превышение ${fmtNum(r.overrunQuantity, 4)} ${item.unit ?? ""} ${r.overrunConfirmed ? "(подтверждено)" : "(не подтверждено)"}` : r.progressAsOf ? `на ${fmtDate(r.progressAsOf)}` : undefined}
           tone={r.overrunQuantity && !r.overrunConfirmed ? "red" : undefined}
         />
-        <Stat label="Расчётная стоимость выполненного" value={fmtMoney(r.earnedValue, cur, "Нет данных")} hint={r.unconfirmedOverrunValue ? `+${fmtMoney(r.unconfirmedOverrunValue, cur)} неподтверждённого превышения` : "по плановым расценкам"} />
-        <Stat label="Принято по подписанным АВР" value={fmtMoney(r.actsAccepted, cur, "Нет данных")} hint={r.documentedPercent ? `Документально подтверждено ${fmtPct(r.documentedPercent)} от плана` : r.actsPending ? `На согласовании: ${fmtMoney(r.actsPending, cur)}` : undefined} />
-        <Stat label={r.accountingCostLabel} value={fmtMoney(r.accountingCost, cur, "Нет данных")} />
+        <Stat label="Расчётная стоимость выполненного" value={fmtMoney(r.earnedValue, cur, "Нет данных")} hint={r.unconfirmedOverrunValue ? `+${fmtMoney(r.unconfirmedOverrunValue, cur)} неподтверждённого превышения` : "по плановым расценкам · расшифровка"} href={`/projects/${projectId}/explain?metric=earned&item=${itemId}${asOf ? `&asOf=${asOf}` : ""}`} />
+        <Stat label="Принято по подписанным АВР" value={fmtMoney(r.actsAccepted, cur, "Нет данных")} hint={r.documentedPercent ? `Документально подтверждено ${fmtPct(r.documentedPercent)} от плана` : r.actsPending ? `На согласовании: ${fmtMoney(r.actsPending, cur)}` : "расшифровка"} href={`/projects/${projectId}/explain?metric=actsAccepted&item=${itemId}${asOf ? `&asOf=${asOf}` : ""}`} />
+        <Stat label={r.accountingCostLabel} value={fmtMoney(r.accountingCost, cur, "Нет данных")} hint="расшифровка" href={access.can("accounting.view") ? `/projects/${projectId}/explain?metric=accountingCost&item=${itemId}${asOf ? `&asOf=${asOf}` : ""}` : undefined} />
         <Stat label="Остаток объёма" value={r.remainingQuantity ? `${fmtNum(r.remainingQuantity, 4)} ${item.unit ?? ""}` : "Нет данных"} tone={r.remainingQuantity && Number(r.remainingQuantity) < 0 ? "red" : undefined} />
         <Stat label="Остаток плановой стоимости" value={fmtMoney(r.remainingCost, cur, "Нет данных")} />
         <Stat label="Выполнено − АВР" value={fmtMoney(r.earnedVsActs, cur, "Нет данных")} hint="Повод для сверки, не задолженность" tone={r.earnedVsActs && Math.abs(Number(r.earnedVsActs)) > 1 ? "yellow" : undefined} />

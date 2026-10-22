@@ -3,6 +3,7 @@
  * совпадала с тем, что пользователь видит на экране.
  */
 import type { RegistryRowDTO } from "@/lib/server/registry";
+import { REGISTRY_COLUMNS } from "./registryColumns";
 
 export interface RegistryFilters {
   q?: string;
@@ -26,10 +27,12 @@ export interface RegistryFilters {
   active?: string;
   endFrom?: string;
   endTo?: string;
+  /** Состояние на дату */
+  asOf?: string;
 }
 
 export const FILTER_KEYS: (keyof RegistryFilters)[] = [
-  "q", "object", "stage", "section", "contractor", "contract", "coverage", "progress", "deviation", "acts", "level", "overdue", "active", "endFrom", "endTo",
+  "q", "object", "stage", "section", "contractor", "contract", "coverage", "progress", "deviation", "acts", "level", "overdue", "active", "endFrom", "endTo", "asOf",
 ];
 
 export function filtersFromParams(p: Record<string, string | string[] | undefined> | URLSearchParams): RegistryFilters {
@@ -91,5 +94,27 @@ export function applyRegistryFilters(rows: RegistryRowDTO[], f: RegistryFilters)
     if (f.endFrom && (!r.plannedEndDate || r.plannedEndDate < f.endFrom)) return false;
     if (f.endTo && (!r.plannedEndDate || r.plannedEndDate > f.endTo)) return false;
     return true;
+  });
+}
+
+
+export interface SortSpec {
+  key: string;
+  dir: 1 | -1;
+}
+
+export function sortRegistry(rows: RegistryRowDTO[], sort: SortSpec | null): RegistryRowDTO[] {
+  if (!sort) return rows;
+  const col = REGISTRY_COLUMNS.find((c) => c.key === sort.key);
+  if (!col) return rows;
+  const numeric = col.kind === "money" || col.kind === "qty" || col.kind === "pct";
+  return [...rows].sort((a, b) => {
+    const va = col.value(a);
+    const vb = col.value(b);
+    if (va === null && vb === null) return 0;
+    if (va === null) return 1; // «нет данных» всегда в конце
+    if (vb === null) return -1;
+    if (numeric) return (Number(va) - Number(vb)) * sort.dir;
+    return va.localeCompare(vb, "ru") * sort.dir;
   });
 }

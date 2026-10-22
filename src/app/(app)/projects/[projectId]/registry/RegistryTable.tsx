@@ -1,11 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
-import Decimal from "decimal.js";
+import { useEffect, useState, useTransition } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import type { RegistryRowDTO } from "@/lib/server/registry";
 import { REGISTRY_COLUMNS, RegistryColumn } from "@/lib/registryColumns";
-import { applyRegistryFilters, filtersToQuery, RegistryFilters } from "@/lib/registryFilter";
+import { filtersToQuery, RegistryFilters } from "@/lib/registryFilter";
 import { fmtDate, fmtMoney, fmtNum, fmtPct } from "@/lib/format";
 import { Badge, type Tone } from "@/components/ui";
 import { COVERAGE_LABELS } from "@/lib/calc/coverage";
@@ -13,13 +13,27 @@ import { COVERAGE_LABELS } from "@/lib/calc/coverage";
 type Opt = { id: string; name: string };
 
 const STORAGE_KEY = "registry.columns.v1";
-const MAX_ROWS = 3000;
 
+export interface ColumnTotal {
+  sum: string;
+  missing: number;
+}
+
+/**
+ * Реестр с серверной фильтрацией, сортировкой и пагинацией: в браузер передаётся только текущая страница,
+ * итоги считаются на сервере по всей выборке. Фильтры хранятся в адресной строке.
+ */
 export function RegistryTable({
   projectId,
   currency,
   rows,
+  total,
+  allCount,
+  page,
+  pageSize,
+  totals,
   initialFilters,
+  sort,
   options,
   canExport,
   methodologyConfirmed,
@@ -27,13 +41,22 @@ export function RegistryTable({
   projectId: string;
   currency: string;
   rows: RegistryRowDTO[];
+  total: number;
+  allCount: number;
+  page: number;
+  pageSize: number;
+  totals: Record<string, ColumnTotal>;
   initialFilters: RegistryFilters;
+  sort: { key: string; dir: 1 | -1 } | null;
   options: { objects: Opt[]; stages: Opt[]; sections: Opt[]; contractors: string[] };
   canExport: boolean;
   methodologyConfirmed: boolean;
 }) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const [pending, startTransition] = useTransition();
   const [filters, setFilters] = useState<RegistryFilters>(initialFilters);
-  const [sort, setSort] = useState<{ key: string; dir: 1 | -1 } | null>(null);
+  const [q, setQ] = useState(initialFilters.q ?? "");
   const [visible, setVisible] = useState<Set<string>>(() => new Set(REGISTRY_COLUMNS.filter((c) => c.defaultVisible).map((c) => c.key)));
 
   useEffect(() => {
@@ -56,159 +79,73 @@ export function RegistryTable({
     }
   };
 
-  const query = filtersToQuery(filters);
+  const navigate = (f: RegistryFilters, extra: Record<string, string | undefined> = {}) => {
+    const sp = new URLSearchParams(filtersToQuery(f));
+    const s = { sort: sort ? `${sort.key}:${sort.dir === 1 ? "asc" : "desc"}` : undefined, ...extra };
+    for (const [k, v] of Object.entries(s)) if (v) sp.set(k, v);
+    startTransition(() => router.replace(`${pathname}${sp.toString() ? "?" + sp : ""}`, { scroll: false }));
+  };
+  const setFilter = (k: keyof RegistryFilters, v: string | undefined) => {
+    const next = { ...filters, [k]: v || undefined };
+    setFilters(next);
+    navigate(next);
+  };
+  // поиск — с задержкой
   useEffect(() => {
-    const url = `${window.location.pathname}${query ? "?" + query : ""}`;
-    window.history.replaceState(null, "", url);
-  }, [query]);
+    if ((filters.q ?? "") === q) return;
+    const t = setTimeout(() => setFilter("q", q), 400);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q]);
 
-  const filtered = useMemo(() => applyRegistryFilters(rows, filters), [rows, filters]);
-  const sorted = useMemo(() => {
-    if (!sort) return filtered;
-    const col = REGISTRY_COLUMNS.find((c) => c.key === sort.key);
-    if (!col) return filtered;
-    const numeric = col.kind === "money" || col.kind === "qty" || col.kind === "pct";
-    return [...filtered].sort((a, b) => {
-      const va = col.value(a);
-      const vb = col.value(b);
-      if (va === null && vb === null) return 0;
-      if (va === null) return 1; // «нет данных» всегда в конце
-      if (vb === null) return -1;
-      if (numeric) return (Number(va) - Number(vb)) * sort.dir;
-      return va.localeCompare(vb, "ru") * sort.dir;
-    });
-  }, [filtered, sort]);
-
+  const query = filtersToQuery(filters);
   const columns = REGISTRY_COLUMNS.filter((c) => visible.has(c.key));
-  const totals = useMemo(() => {
-    const t: Record<string, { sum: Decimal; missing: number }> = {};
-    for (const c of columns) {
-      if (c.kind !== "money") continue;
-      let sum = new Decimal(0);
-      let missing = 0;
-      for (const r of filtered) {
-        const v = c.value(r);
-        if (v === null) missing++;
-        else sum = sum.plus(v);
-      }
-      t[c.key] = { sum, missing };
-    }
-    return t;
-  }, [columns, filtered]);
-
-  const set = (k: keyof RegistryFilters) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
-    setFilters((f) => ({ ...f, [k]: e.target.value || undefined }));
+  const set = (k: keyof RegistryFilters) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setFilter(k, e.target.value);
   const activeCount = Object.values(filters).filter(Boolean).length;
+  const pages = Math.max(1, Math.ceil(total / pageSize));
+  const toggleSort = (key: string) => {
+    const next = sort?.key === key ? (sort.dir === 1 ? `${key}:desc` : undefined) : `${key}:asc`;
+    navigate(filters, { sort: next ?? "" });
+  };
 
   return (
-    <div className="space-y-3">
+    <div className={`space-y-3 ${pending ? "opacity-70" : ""}`}>
       <div className="card p-3">
         <div className="grid grid-cols-2 gap-2 md:grid-cols-4 xl:grid-cols-8">
           <label className="col-span-2">
             <span className="label">Поиск</span>
-            <input className="input" placeholder="Код, наименование, подрядчик, № договора" value={filters.q ?? ""} onChange={set("q")} />
+            <input className="input" placeholder="Код, наименование, подрядчик, № договора" value={q} onChange={(e) => setQ(e.target.value)} />
           </label>
           <Sel label="Корпус" value={filters.object} onChange={set("object")} options={options.objects} noneLabel="Без корпуса" />
           <Sel label="Этап" value={filters.stage} onChange={set("stage")} options={options.stages} noneLabel="Без этапа" />
           <Sel label="Раздел сметы" value={filters.section} onChange={set("section")} options={options.sections} noneLabel="Без раздела" />
           <Sel label="Подрядчик" value={filters.contractor} onChange={set("contractor")} options={options.contractors.map((c) => ({ id: c, name: c }))} noneLabel="Без подрядчика" />
-          <Sel
-            label="Наличие договора"
-            value={filters.contract}
-            onChange={set("contract")}
-            options={[
-              { id: "covered", name: "Покрыто договором" },
-              { id: "uncovered", name: "Без договора" },
-              { id: "review", name: "Требует проверки" },
-            ]}
-          />
+          <Sel label="Наличие договора" value={filters.contract} onChange={set("contract")} options={[{ id: "covered", name: "Покрыто договором" }, { id: "uncovered", name: "Без договора" }, { id: "review", name: "Требует проверки" }]} />
           <Sel label="Статус договора" value={filters.coverage} onChange={set("coverage")} options={Object.entries(COVERAGE_LABELS).map(([id, name]) => ({ id, name }))} />
-          <Sel
-            label="Готовность"
-            value={filters.progress}
-            onChange={set("progress")}
-            options={[
-              { id: "nodata", name: "Нет данных" },
-              { id: "0", name: "0 %" },
-              { id: "partial", name: "1–99 %" },
-              { id: "notdone", name: "Не завершено" },
-              { id: "done", name: "100 % и более" },
-              { id: "over", name: "Превышение объёма" },
-            ]}
-          />
-          <Sel
-            label="Отклонения"
-            value={filters.deviation}
-            onChange={set("deviation")}
-            options={[
-              { id: "any", name: "Любые отклонения" },
-              { id: "overrun", name: "Превышение затрат" },
-              { id: "contractOver", name: "Договор выше плана" },
-              { id: "reconcile", name: "Расхождение с АВР" },
-              { id: "volume", name: "Превышение объёма" },
-            ]}
-          />
-          <Sel
-            label="АВР"
-            value={filters.acts}
-            onChange={set("acts")}
-            options={[
-              { id: "signed", name: "Есть подписанные" },
-              { id: "pending", name: "Есть на согласовании" },
-              { id: "none", name: "Нет АВР" },
-            ]}
-          />
-          <Sel
-            label="Статус проверки"
-            value={filters.level}
-            onChange={set("level")}
-            options={[
-              { id: "attention", name: "Требуют внимания (красные и жёлтые)" },
-              { id: "red", name: "Красный — существенные отклонения" },
-              { id: "yellow", name: "Жёлтый — требуется проверка" },
-              { id: "grey", name: "Серый — недостаточно данных" },
-              { id: "green", name: "Зелёный — подтверждено" },
-            ]}
-          />
+          <Sel label="Готовность" value={filters.progress} onChange={set("progress")} options={[{ id: "nodata", name: "Нет данных" }, { id: "0", name: "0 %" }, { id: "partial", name: "1–99 %" }, { id: "notdone", name: "Не завершено" }, { id: "done", name: "100 % и более" }, { id: "over", name: "Превышение объёма" }]} />
+          <Sel label="Отклонения" value={filters.deviation} onChange={set("deviation")} options={[{ id: "any", name: "Любые отклонения" }, { id: "overrun", name: "Превышение затрат" }, { id: "contractOver", name: "Договор выше плана" }, { id: "reconcile", name: "Расхождение с АВР" }, { id: "volume", name: "Превышение объёма" }]} />
+          <Sel label="АВР" value={filters.acts} onChange={set("acts")} options={[{ id: "signed", name: "Есть подписанные" }, { id: "pending", name: "Есть на согласовании" }, { id: "none", name: "Нет АВР" }]} />
+          <Sel label="Статус проверки" value={filters.level} onChange={set("level")} options={[{ id: "attention", name: "Требуют внимания (красные и жёлтые)" }, { id: "red", name: "Красный — существенные отклонения" }, { id: "yellow", name: "Жёлтый — требуется проверка" }, { id: "grey", name: "Серый — недостаточно данных" }, { id: "green", name: "Зелёный — подтверждено" }]} />
           <Sel label="Сроки" value={filters.overdue} onChange={set("overdue")} options={[{ id: "1", name: "Просроченные" }]} />
           <Sel label="В смете" value={filters.active} onChange={set("active")} options={[{ id: "1", name: "Действующие статьи" }, { id: "0", name: "Нет в действующей смете" }]} />
-          <label>
-            <span className="label">Завершение (план) с</span>
-            <input type="date" className="input" value={filters.endFrom ?? ""} onChange={set("endFrom")} />
-          </label>
-          <label>
-            <span className="label">по</span>
-            <input type="date" className="input" value={filters.endTo ?? ""} onChange={set("endTo")} />
-          </label>
+          <label><span className="label">Завершение (план) с</span><input type="date" className="input" value={filters.endFrom ?? ""} onChange={set("endFrom")} /></label>
+          <label><span className="label">по</span><input type="date" className="input" value={filters.endTo ?? ""} onChange={set("endTo")} /></label>
+          <label><span className="label">Состояние на дату</span><input type="date" className="input" value={filters.asOf ?? ""} onChange={set("asOf")} max={new Date().toISOString().slice(0, 10)} /></label>
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
-          <span className="text-slate-600">
-            Найдено статей: <b>{filtered.length}</b> из {rows.length}
-          </span>
-          {activeCount > 0 && (
-            <button className="btn-secondary btn-sm" onClick={() => setFilters({})}>
-              Сбросить фильтры ({activeCount})
-            </button>
-          )}
+          <span className="text-slate-600">Найдено статей: <b>{total}</b> из {allCount}</span>
+          {activeCount > 0 && <button className="btn-secondary btn-sm" onClick={() => { setFilters({}); setQ(""); navigate({}); }}>Сбросить фильтры ({activeCount})</button>}
           <details className="relative">
             <summary className="btn-secondary btn-sm cursor-pointer list-none">Столбцы ({columns.length})</summary>
             <div className="absolute z-20 mt-1 max-h-96 w-72 overflow-auto rounded-md border border-slate-200 bg-white p-2 shadow-lg">
               {REGISTRY_COLUMNS.map((c) => (
-                <label key={c.key} className="flex items-center gap-2 py-0.5 text-xs">
-                  <input type="checkbox" checked={visible.has(c.key)} onChange={() => toggleColumn(c.key)} />
-                  {c.label}
-                </label>
+                <label key={c.key} className="flex items-center gap-2 py-0.5 text-xs"><input type="checkbox" checked={visible.has(c.key)} onChange={() => toggleColumn(c.key)} />{c.label}</label>
               ))}
             </div>
           </details>
-          {canExport && (
-            <a className="btn-secondary btn-sm" href={`/api/projects/${projectId}/registry/export${query ? "?" + query : ""}`}>
-              Экспорт в Excel
-            </a>
-          )}
-          {!methodologyConfirmed && (
-            <span className="text-xs text-amber-800">Методика 1С не согласована: «Затраты по данным 1С» — импортированные суммы, отклонения предварительные.</span>
-          )}
+          {canExport && <a className="btn-secondary btn-sm" href={`/api/projects/${projectId}/registry/export${query ? "?" + query : ""}`}>Экспорт в Excel</a>}
+          {filters.asOf && <span className="text-xs text-blue-800">Показано состояние на {fmtDate(filters.asOf)} по датам документов</span>}
+          {!methodologyConfirmed && <span className="text-xs text-amber-800">Методика 1С не согласована: суммы 1С — импортированные, отклонения предварительные.</span>}
         </div>
       </div>
 
@@ -220,7 +157,7 @@ export function RegistryTable({
                 <th
                   key={c.key}
                   className={`cursor-pointer select-none whitespace-nowrap ${c.kind === "money" || c.kind === "qty" || c.kind === "pct" ? "text-right" : ""}`}
-                  onClick={() => setSort((s) => (s?.key === c.key ? (s.dir === 1 ? { key: c.key, dir: -1 } : null) : { key: c.key, dir: 1 }))}
+                  onClick={() => toggleSort(c.key)}
                   aria-sort={sort?.key === c.key ? (sort.dir === 1 ? "ascending" : "descending") : undefined}
                 >
                   {c.key === "accountingCost" && !methodologyConfirmed ? "Импортированные затраты 1С" : c.label}
@@ -230,7 +167,7 @@ export function RegistryTable({
             </tr>
           </thead>
           <tbody>
-            {sorted.slice(0, MAX_ROWS).map((r) => (
+            {rows.map((r) => (
               <tr key={r.id} className="hover:bg-slate-50">
                 {columns.map((c) => (
                   <td key={c.key} className={c.kind === "money" || c.kind === "qty" || c.kind === "pct" ? "num" : c.key === "name" ? "min-w-[260px]" : ""}>
@@ -239,15 +176,11 @@ export function RegistryTable({
                 ))}
               </tr>
             ))}
-            {sorted.length === 0 && (
-              <tr>
-                <td colSpan={columns.length} className="py-6 text-center text-slate-500">
-                  {rows.length === 0 ? "В реестре нет статей. Загрузите и утвердите смету." : "Нет статей, удовлетворяющих фильтрам."}
-                </td>
-              </tr>
+            {rows.length === 0 && (
+              <tr><td colSpan={columns.length} className="py-6 text-center text-slate-500">{allCount === 0 ? "В реестре нет статей. Загрузите и утвердите смету." : "Нет статей, удовлетворяющих фильтрам."}</td></tr>
             )}
           </tbody>
-          {sorted.length > 0 && (
+          {total > 0 && (
             <tfoot className="sticky bottom-0 bg-slate-50 font-semibold">
               <tr>
                 {columns.map((c, i) => (
@@ -264,8 +197,14 @@ export function RegistryTable({
             </tfoot>
           )}
         </table>
-        {sorted.length > MAX_ROWS && <p className="p-2 text-xs text-slate-500">Показаны первые {MAX_ROWS} строк. Уточните фильтры или используйте экспорт.</p>}
       </div>
+      {pages > 1 && (
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <button className="btn-secondary btn-sm" disabled={page <= 1} onClick={() => navigate(filters, { page: String(page - 1) })}>← Назад</button>
+          <span>Страница {page} из {pages} · по {pageSize} строк</span>
+          <button className="btn-secondary btn-sm" disabled={page >= pages} onClick={() => navigate(filters, { page: String(page + 1) })}>Вперёд →</button>
+        </div>
+      )}
     </div>
   );
 }
