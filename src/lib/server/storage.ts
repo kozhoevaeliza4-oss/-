@@ -23,6 +23,8 @@ const MIME: Record<string, string> = {
   txt: "text/plain",
   pdf: "application/pdf",
   docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  heic: "image/heic",
+  heif: "image/heif",
   jpg: "image/jpeg",
   jpeg: "image/jpeg",
   png: "image/png",
@@ -43,6 +45,10 @@ function signatureOk(ext: string, buf: Buffer): boolean {
     case "jpg":
     case "jpeg":
       return buf.length > 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff;
+    case "heic":
+    case "heif":
+      // ISO BMFF: «ftyp» по смещению 4 и бренд heic/heix/mif1/msf1
+      return buf.length > 12 && buf.subarray(4, 8).toString("latin1") === "ftyp" && /^(heic|heix|hevc|hevx|mif1|msf1)$/.test(buf.subarray(8, 12).toString("latin1"));
     case "csv":
     case "txt":
       // текст: без нулевых байтов в начале (кроме UTF-16 BOM)

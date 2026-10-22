@@ -12,6 +12,8 @@ export default async function ProjectLayout({ children, params }: { children: Re
     { href: base, label: "Панель", exact: true },
     { href: `${base}/registry`, label: "Реестр работ" },
     { href: `${base}/estimate`, label: "Смета" },
+    ...(access.can("contract.view") ? [{ href: `${base}/contracts`, label: "Договоры" }] : []),
+    ...(access.can("act.view") ? [{ href: `${base}/acts`, label: "АВР" }] : []),
     { href: `${base}/structure`, label: "Структура и настройки" },
     ...(access.can("project.members") ? [{ href: `${base}/members`, label: "Участники" }] : []),
     ...(access.can("audit.view") ? [{ href: `${base}/audit`, label: "Журнал" }] : []),

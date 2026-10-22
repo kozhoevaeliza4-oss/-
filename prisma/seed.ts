@@ -4,12 +4,18 @@
  */
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
-import { DEFAULT_ROLES } from "../src/lib/permissions";
+import { DEFAULT_ROLES, PERMISSIONS_ADDED_V2 } from "../src/lib/permissions";
 
 const prisma = new PrismaClient();
 
 async function main() {
   for (const r of DEFAULT_ROLES) {
+    // Новые права версии 2 добавляются существующим системным ролям (прочие изменения администратора сохраняются)
+    const existing = await prisma.role.findUnique({ where: { code: r.code } });
+    if (existing) {
+      const add = PERMISSIONS_ADDED_V2.filter((p) => r.permissions.includes(p) && !existing.permissions.includes(p));
+      if (add.length) await prisma.role.update({ where: { id: existing.id }, data: { permissions: [...existing.permissions, ...add] } });
+    }
     await prisma.role.upsert({
       where: { code: r.code },
       // Состав прав существующих ролей не перезаписывается — его мог изменить администратор.

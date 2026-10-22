@@ -37,6 +37,9 @@ model User {
   progressRecords WorkProgressRecord[]
   documents      Document[]
   importJobs     ImportJob[]
+  recognitions   ActRecognition[]
+  issuesAssigned Issue[]         @relation("IssueAssignee")
+  issueEvents    IssueEvent[]
 }
 
 model Session {
@@ -113,6 +116,9 @@ model Project {
   documents        Document[]
   importJobs       ImportJob[]
   auditLogs        AuditLog[]
+  recognitions     ActRecognition[]
+  classificationRules ClassificationRule[]
+  issues           Issue[]
 }
 
 // Корпус / объект строительства
@@ -242,11 +248,16 @@ model WorkItem {
   estimateLines   EstimateLine[]
   progressRecords WorkProgressRecord[]
   allocations     ContractWorkAllocation[]
-  actLines        ActLine[]
+  actLineAllocations ActLineAllocation[]
   transactionAllocations TransactionAllocation[]
+  issues          Issue[]
+  classificationRules ClassificationRule[]
 
   @@unique([projectId, itemKey])
   @@index([projectId])
+  @@index([projectId, objectId])
+  @@index([projectId, stageId])
+  @@index([projectId, sectionId])
 }
 
 // Строка версии сметы: исходные плановые значения в том виде, как они были в документе.
@@ -287,6 +298,7 @@ model EstimateLine {
 model Contractor {
   id        String     @id @default(cuid())
   name      String
+  // ИНН (в КР — 14 цифр). Уникален, если указан.
   inn       String?    @unique
   comment   String?
   createdAt DateTime   @default(now())
@@ -294,6 +306,14 @@ model Contractor {
   acts      Act[]
   payments  Payment[]
   transactionAllocations TransactionAllocation[]
+}
+
+// Статус подписания хранится отдельно от статуса действительности
+enum ContractSigningStatus {
+  UNKNOWN          // не установлен
+  NOT_SIGNED       // не подписан
+  PARTIALLY_SIGNED // подписан одной стороной
+  SIGNED           // подписан сторонами
 }
 
 enum ContractStatus {
@@ -320,6 +340,12 @@ model Contract {
   endDate      DateTime?      @db.Date
   paymentTerms String?
   status       ContractStatus @default(UPLOADED_NEEDS_REVIEW)
+  signingStatus ContractSigningStatus @default(UNKNOWN)
+  contractorInn String?
+  // Разрешение распределить на статьи больше текущей суммы договора (исключение с обоснованием)
+  overAllocationAllowed Boolean @default(false)
+  overAllocationComment String?
+  overAllocationById    String?
   // Подтверждение проверки человеком (наличие файла не делает договор действующим)
   verifiedById String?
   verifiedAt   DateTime?
@@ -334,6 +360,10 @@ model Contract {
   acts        Act[]
   payments    Payment[]
   transactionAllocations TransactionAllocation[]
+  issues      Issue[]
+  classificationRules ClassificationRule[]
+
+  @@index([projectId, status])
 }
 
 model ContractAmendment {
@@ -376,6 +406,7 @@ model ContractWorkAllocation {
   createdAt   DateTime         @default(now())
 
   @@unique([contractId, workItemId])
+  @@index([workItemId])
 }
 
 // ───────────────────────────── Физическое выполнение ─────────────────────────────
@@ -417,11 +448,14 @@ model WorkProgressRecord {
 
 // ───────────────────────────── АВР ─────────────────────────────
 
+// Юридический статус акта. Не зависит от статуса распознавания.
 enum ActStatus {
-  PREPARED    // подготовлен
+  DRAFT       // черновик / подготовлен
   ON_APPROVAL // на согласовании
-  SIGNED      // подписан
+  SIGNED      // подписан (устанавливается только пользователем)
   REJECTED    // отклонён
+  CORRECTED   // скорректирован: заменён подписанным корректировочным актом, в расчёт не входит
+  ANNULLED    // аннулирован
 }
 
 model Act {
@@ -436,32 +470,150 @@ model Act {
   date         DateTime    @db.Date
   periodFrom   DateTime?   @db.Date
   periodTo     DateTime?   @db.Date
-  status       ActStatus   @default(PREPARED)
-  // Корректировочный акт (суммы строк могут быть отрицательными — сторно)
+  status       ActStatus   @default(DRAFT)
+  // Корректировочный акт полностью заменяет исходный: после подписания корректировки исходный получает статус CORRECTED
   isCorrection Boolean     @default(false)
   correctsActId String?
+  correctsAct  Act?        @relation("ActCorrection", fields: [correctsActId], references: [id])
+  corrections  Act[]       @relation("ActCorrection")
   currency     String
+  // Реквизиты документа (как в документе)
+  customerName   String?
+  contractorName String?
+  contractorInn  String?
+  contractText   String?
+  objectText     String?
+  // Итог по документу, НДС, сумма прописью — исходные значения документа
+  documentTotal  Decimal?  @db.Decimal(18, 2)
+  vatAmount      Decimal?  @db.Decimal(18, 2)
+  amountInWords  String?
+  signatories    String?
   signedAt     DateTime?
+  signedById   String?
+  annulledAt   DateTime?
+  correctedAt  DateTime?
+  statusChangedAt DateTime?
+  // Подтверждённое исключение при превышении договорных лимитов
+  limitOverride        Boolean @default(false)
+  limitOverrideComment String?
+  limitOverrideById    String?
+  // Решение пользователя по вероятному дубликату
+  duplicateDecision String?
   comment      String?
   documentId   String?
   document     Document?   @relation(fields: [documentId], references: [id])
+  recognition  ActRecognition?
+  createdById  String?
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
 
-  lines ActLine[]
+  lines  ActLine[]
+  issues Issue[]
+
+  @@index([projectId, status])
+  @@index([projectId, number])
 }
 
 model ActLine {
   id          String    @id @default(cuid())
   actId       String
   act         Act       @relation(fields: [actId], references: [id], onDelete: Cascade)
-  workItemId  String?
-  workItem    WorkItem? @relation(fields: [workItemId], references: [id])
+  sortOrder   Int       @default(0)
+  lineNo      String?
+  code        String?
   description String?
   unit        String?
   quantity    Decimal?  @db.Decimal(18, 4)
   unitPrice   Decimal?  @db.Decimal(18, 4)
   amount      Decimal   @db.Decimal(18, 2)
+  directCosts Decimal?  @db.Decimal(18, 2)
+  note        String?
+  pageNumber  Int?
+  // Нет соответствия в смете/договоре — требуется решение ответственного
+  unmatched   Boolean   @default(false)
+
+  allocations ActLineAllocation[]
+}
+
+// Распределение строки акта по статьям: одна строка — несколько статей, одна статья — много актов.
+model ActLineAllocation {
+  id         String   @id @default(cuid())
+  actLineId  String
+  actLine    ActLine  @relation(fields: [actLineId], references: [id], onDelete: Cascade)
+  workItemId String
+  workItem   WorkItem @relation(fields: [workItemId], references: [id], onDelete: Cascade)
+  quantity   Decimal? @db.Decimal(18, 4)
+  amount     Decimal  @db.Decimal(18, 2)
+  createdAt  DateTime @default(now())
+
+  @@unique([actLineId, workItemId])
+  @@index([workItemId])
+}
+
+enum RecognitionStatus {
+  UPLOADED     // загружен
+  QUEUED       // ожидает распознавания
+  RECOGNIZING  // распознаётся
+  NEEDS_REVIEW // требует проверки
+  REVIEWED     // проверен пользователем
+  CONFIRMED    // подтверждён и сохранён
+  FAILED       // ошибка распознавания (оригинал сохранён)
+  CANCELLED    // отменён
+}
+
+// Черновик распознанного АВР. До подтверждения не влияет на финансовые показатели.
+model ActRecognition {
+  id           String            @id @default(cuid())
+  projectId    String
+  project      Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  status       RecognitionStatus @default(UPLOADED)
+  progress     Int               @default(0)
+  progressText String?
+  error        String?
+  ocrProvider  String?
+  rawText      String?
+  // Реквизиты: { field: { raw, value, confidence, page, bbox, status } }
+  fields       Json?
+  // Строки таблицы с исходными и нормализованными значениями и предложениями сопоставления
+  lines        Json?
+  // Результаты арифметических проверок, сопоставления и поиска дубликатов
+  checks       Json?
+  matches      Json?
+  duplicates   Json?
+  duplicateDecision String?
+  actId        String?           @unique
+  act          Act?              @relation(fields: [actId], references: [id])
+  createdById  String
+  createdBy    User              @relation(fields: [createdById], references: [id])
+  startedAt    DateTime?
+  finishedAt   DateTime?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  pages ActRecognitionPage[]
+
+  @@index([projectId, status])
+}
+
+model ActRecognitionPage {
+  id            String         @id @default(cuid())
+  recognitionId String
+  recognition   ActRecognition @relation(fields: [recognitionId], references: [id], onDelete: Cascade)
+  // Оригинал (неизменяемый) и подготовленное для OCR изображение
+  documentId    String
+  document      Document       @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  sortOrder     Int
+  // Для PDF — номер страницы внутри файла
+  sourcePage    Int?
+  processedPath String?
+  width         Int?
+  height        Int?
+  rotation      Int?
+  meanConfidence Float?
+  words         Json?
+  error         String?
+
+  @@index([recognitionId])
 }
 
 // ───────────────────────────── 1С ─────────────────────────────
@@ -485,7 +637,11 @@ model AccountingImport {
   periodFrom  DateTime?              @db.Date
   periodTo    DateTime?              @db.Date
   rowCount    Int                    @default(0)
+  newRows     Int                    @default(0)
+  duplicateRows Int                  @default(0)
   sourceTotal Decimal?               @db.Decimal(18, 2)
+  acceptedTotal Decimal?             @db.Decimal(18, 2)
+  fileSha256  String?
   status      AccountingImportStatus @default(PREVIEW)
   createdAt   DateTime               @default(now())
 
@@ -494,8 +650,21 @@ model AccountingImport {
 
 enum ClassificationStatus {
   UNCLASSIFIED // требует классификации
-  CLASSIFIED   // сопоставлено и подтверждено
-  EXCLUDED     // исключено из расчёта (внутреннее перемещение, не относится к объекту и т.п.)
+  PROPOSED     // предварительно классифицировано правилом, требует подтверждения
+  CONFIRMED    // классификация подтверждена пользователем
+  EXCLUDED     // исключено из расчёта (не относится к объекту и т.п.)
+}
+
+// Предварительные категории операций — адаптируются к реальному учёту
+enum TransactionCategory {
+  UNCLASSIFIED
+  COST              // затраты
+  ADJUSTMENT        // корректировки
+  REVERSAL          // сторно
+  INTERNAL_TRANSFER // внутренние перемещения
+  SETTLEMENT        // расчёты с контрагентами
+  PAYMENT           // платежи
+  OTHER             // прочие
 }
 
 model AccountingTransaction {
@@ -523,15 +692,48 @@ model AccountingTransaction {
   quantity      Decimal?             @db.Decimal(18, 4)
   comment       String?
   analytics     Json?
+  contractText  String?
   raw           Json
+  category      TransactionCategory  @default(UNCLASSIFIED)
   classification ClassificationStatus @default(UNCLASSIFIED)
+  ruleId        String?
+  rule          ClassificationRule?  @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+  classifiedById String?
+  classifiedAt  DateTime?
   exclusionReason String?
+  // Возможный дубликат (совпадают документ, дата и сумма, но отличается аналитика) — требует проверки
+  possibleDuplicateOfId String?
   createdAt     DateTime             @default(now())
 
   allocations TransactionAllocation[]
   payments    Payment[]
+  issues      Issue[]
 
   @@unique([projectId, fingerprint])
+  @@index([projectId, category, classification])
+  @@index([projectId, date])
+}
+
+// Правило предварительной классификации операций 1С. Результат правила всегда требует подтверждения.
+model ClassificationRule {
+  id                  String              @id @default(cuid())
+  projectId           String
+  project             Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name                String
+  priority            Int                 @default(100)
+  isActive            Boolean             @default(true)
+  account             String?
+  corrAccount         String?
+  textContains        String?
+  counterpartyContains String?
+  category            TransactionCategory
+  workItemId          String?
+  workItem            WorkItem?           @relation(fields: [workItemId], references: [id], onDelete: SetNull)
+  contractId          String?
+  contract            Contract?           @relation(fields: [contractId], references: [id], onDelete: SetNull)
+  createdAt           DateTime            @default(now())
+
+  transactions AccountingTransaction[]
 }
 
 model TransactionAllocation {
@@ -549,6 +751,9 @@ model TransactionAllocation {
   confirmedById String?
   confirmedAt   DateTime?
   createdAt     DateTime              @default(now())
+
+  @@index([transactionId])
+  @@index([workItemId])
 }
 
 model Payment {
@@ -564,10 +769,12 @@ model Payment {
   currency      String
   documentNumber String?
   source        DataSource             @default(MANUAL)
-  transactionId String?
-  transaction   AccountingTransaction? @relation(fields: [transactionId], references: [id])
+  transactionId String?                 @unique
+  transaction   AccountingTransaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
   comment       String?
   createdAt     DateTime               @default(now())
+
+  @@index([projectId, contractId])
 }
 
 // ───────────────────────────── Документы, импорт, аудит ─────────────────────────────
@@ -606,6 +813,7 @@ model Document {
   accountingImports AccountingImport[]
   importJobs       ImportJob[]
   extractedFields  ExtractedField[]
+  recognitionPages ActRecognitionPage[]
 
   @@index([projectId, sha256])
 }
@@ -683,4 +891,77 @@ model AuditLog {
 
   @@index([projectId, createdAt])
   @@index([entityType, entityId])
+}
+
+// ───────────────────────────── Контроль отклонений ─────────────────────────────
+
+enum IssueSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum IssueStatus {
+  NEW             // новая
+  ASSIGNED        // назначена
+  IN_REVIEW       // на проверке
+  NEEDS_DECISION  // требует решения
+  RESOLVED        // устранена (условие больше не выполняется)
+  CLOSED_EXCEPTION // закрыта с обоснованным исключением
+}
+
+// Карточка проблемы. Создаётся проверками автоматически; закрыть можно только устранением причины
+// (проверка больше не находит условие) или исключением с обязательным обоснованием.
+model Issue {
+  id           String        @id @default(cuid())
+  projectId    String
+  project      Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  // Уникальный ключ условия, например «WORK_WITHOUT_CONTRACT:<workItemId>»
+  key          String
+  type         String
+  title        String
+  severity     IssueSeverity
+  status       IssueStatus   @default(NEW)
+  workItemId   String?
+  workItem     WorkItem?     @relation(fields: [workItemId], references: [id], onDelete: SetNull)
+  contractId   String?
+  contract     Contract?     @relation(fields: [contractId], references: [id], onDelete: SetNull)
+  actId        String?
+  act          Act?          @relation(fields: [actId], references: [id], onDelete: SetNull)
+  transactionId String?
+  transaction  AccountingTransaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+  amount       Decimal?      @db.Decimal(18, 2)
+  source       String
+  details      String?
+  assigneeId   String?
+  assignee     User?         @relation("IssueAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  comment      String?
+  // Условие обнаруживается последней проверкой
+  isActive     Boolean       @default(true)
+  detectedAt   DateTime      @default(now())
+  lastSeenAt   DateTime      @default(now())
+  resolvedAt   DateTime?
+  updatedAt    DateTime      @updatedAt
+
+  events IssueEvent[]
+
+  @@unique([projectId, key])
+  @@index([projectId, status])
+  @@index([projectId, type])
+}
+
+model IssueEvent {
+  id        String   @id @default(cuid())
+  issueId   String
+  issue     Issue    @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action    String
+  fromStatus IssueStatus?
+  toStatus  IssueStatus?
+  comment   String?
+  createdAt DateTime @default(now())
+
+  @@index([issueId, createdAt])
 }

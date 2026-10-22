@@ -111,7 +111,7 @@ describe("Тест 3. АВР и физическая готовность", () =
         { amount: d(100), status: "SIGNED", currency: "KGS" },
         { amount: d(-30), status: "SIGNED", currency: "KGS" },
         { amount: d(500), status: "ON_APPROVAL", currency: "KGS" },
-        { amount: d(700), status: "PREPARED", currency: "KGS" },
+        { amount: d(700), status: "DRAFT", currency: "KGS" },
         { amount: d(900), status: "REJECTED", currency: "KGS" },
         { amount: d(50), status: "SIGNED", currency: "USD" },
       ],
@@ -301,5 +301,19 @@ describe("Сроки", () => {
       }),
     );
     expect(r.overdue).toBe(false);
+  });
+});
+
+describe("Тест 14. Лимит распределения договора", () => {
+  it("сумма распределений не превышает договор без исключения", async () => {
+    const { checkAllocationLimit } = await import("@/lib/calc/coverage");
+    const base = { contractAmount: d(1000), otherAllocations: [d(600), d(300)] };
+    expect(checkAllocationLimit({ ...base, newAmount: d(100), overAllocationAllowed: false }).ok).toBe(true);
+    const over = checkAllocationLimit({ ...base, newAmount: d(150), overAllocationAllowed: false });
+    expect(over.ok).toBe(false);
+    expect(s(over.excess)).toBe("50.00");
+    const allowed = checkAllocationLimit({ ...base, newAmount: d(150), overAllocationAllowed: true });
+    expect(allowed.ok).toBe(true);
+    expect(allowed.reason).toMatch(/исключением/);
   });
 });

@@ -6,7 +6,7 @@
  *
  *   npm run db:demo            — создать/пересоздать демо-проект
  */
-import { PrismaClient, Prisma } from "@prisma/client";
+import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import ExcelJS from "exceljs";
 import { randomBytes } from "node:crypto";
@@ -177,11 +177,11 @@ async function main() {
 
   // АВР (ДЕМО)
   const act = await prisma.act.create({ data: { projectId: pid, contractId: k1.id, contractorId: c1.id, number: "АВР-1", date: D("2026-05-05"), status: "SIGNED", currency: "KGS", signedAt: D("2026-05-07") } });
-  await prisma.actLine.create({ data: { actId: act.id, workItemId: items["К1:01-01-003"], quantity: 4200, unitPrice: 350, amount: 1470000 } });
+  await actLine(act.id, items["К1:01-01-003"], "Разработка грунта экскаватором", 4200, 350, 1470000);
   const act2 = await prisma.act.create({ data: { projectId: pid, contractId: k2.id, contractorId: c2.id, number: "АВР-7", date: D("2026-08-05"), status: "SIGNED", currency: "KGS", signedAt: D("2026-08-07") } });
-  await prisma.actLine.create({ data: { actId: act2.id, workItemId: items["К1:06-01-001"], quantity: 600, amount: new Prisma.Decimal(5700000) } });
+  await actLine(act2.id, items["К1:06-01-001"], "Бетонирование фундаментной плиты", 600, 9500, 5700000);
   const act3 = await prisma.act.create({ data: { projectId: pid, contractId: k2.id, contractorId: c2.id, number: "АВР-9", date: D("2026-10-20"), status: "ON_APPROVAL", currency: "KGS" } });
-  await prisma.actLine.create({ data: { actId: act3.id, workItemId: items["К1:06-01-015"], quantity: 500, amount: 6250000 } });
+  await actLine(act3.id, items["К1:06-01-015"], "Монолитные колонны и стены", 500, 12500, 6250000);
 
   await prisma.auditLog.create({ data: { userId: actor, projectId: pid, action: "project.create", entityType: "Project", entityId: pid, comment: "Создан демонстрационный проект" } });
 
@@ -192,6 +192,12 @@ async function main() {
   console.log("Демо-пользователи (пароль для всех):", password);
   for (const r of roles.filter((x) => x.code !== "admin")) console.log(`  demo.${r.code}@example.local — ${r.name}`);
   console.log("Пример файла сметы: samples/demo-estimate-v2.xlsx");
+}
+
+async function actLine(actId: string, workItemId: string, description: string, quantity: number, unitPrice: number, amount: number) {
+  await prisma.actLine.create({
+    data: { actId, description, unit: "м3", quantity, unitPrice, amount, allocations: { create: { workItemId, quantity, amount } } },
+  });
 }
 
 async function writeSampleEstimate() {

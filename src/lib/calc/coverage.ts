@@ -172,3 +172,39 @@ export function contractUnallocated(current: Num, allocatedAmounts: Num[]): Num 
   if (s.missing > 0) return null;
   return current.minus(s.sum ?? new Decimal(0));
 }
+
+export interface AllocationLimitResult {
+  ok: boolean;
+  /** Сумма распределений после изменения */
+  allocatedAfter: Num;
+  /** Превышение над текущей суммой договора (> 0) */
+  excess: Num;
+  reason: string | null;
+}
+
+/**
+ * Контроль распределения договора: сумма распределений на статьи не должна превышать текущую сумму договора,
+ * если не оформлено исключение. Без суммы договора проверка невозможна — распределение допускается с предупреждением.
+ */
+export function checkAllocationLimit(input: {
+  contractAmount: Num;
+  otherAllocations: Num[];
+  newAmount: Num;
+  overAllocationAllowed: boolean;
+}): AllocationLimitResult {
+  const others = sumKnown(input.otherAllocations).sum ?? new Decimal(0);
+  const after = input.newAmount === null ? others : others.plus(input.newAmount);
+  if (input.contractAmount === null) {
+    return { ok: true, allocatedAfter: after, excess: null, reason: "Сумма договора не указана — лимит распределения не проверен" };
+  }
+  const excess = after.minus(input.contractAmount);
+  if (excess.gt(0) && !input.overAllocationAllowed) {
+    return {
+      ok: false,
+      allocatedAfter: after,
+      excess,
+      reason: `Сумма распределений (${after.toFixed(2)}) превысит сумму договора (${input.contractAmount.toFixed(2)}) на ${excess.toFixed(2)}. Требуется оформленное исключение.`,
+    };
+  }
+  return { ok: true, allocatedAfter: after, excess: excess.gt(0) ? excess : null, reason: excess.gt(0) ? "Превышение суммы договора разрешено исключением" : null };
+}

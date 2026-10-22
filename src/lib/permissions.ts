@@ -15,7 +15,9 @@ export const PERMISSIONS = {
   "contract.edit": "Загрузка и редактирование договоров",
   "contract.verify": "Подтверждение договоров и распределений",
   "act.view": "Просмотр АВР",
-  "act.edit": "Ввод и изменение АВР",
+  "act.edit": "Ввод и изменение АВР, распознавание по фото",
+  "act.sign": "Отметка АВР как подписанного",
+  "act.override": "Исключения по лимитам договора",
   "accounting.view": "Просмотр данных 1С",
   "accounting.import": "Импорт выгрузок 1С",
   "accounting.classify": "Классификация операций 1С",
@@ -23,7 +25,12 @@ export const PERMISSIONS = {
   "document.download": "Скачивание документов",
   "report.export": "Экспорт отчётов",
   "audit.view": "Просмотр журнала действий",
+  "issue.view": "Просмотр проблем и отклонений",
+  "issue.manage": "Работа с проблемами (назначение, решение, исключения)",
 } as const;
+
+/** Права, появившиеся во второй версии: при обновлении добавляются системным ролям по умолчанию (prisma/seed.ts). */
+export const PERMISSIONS_ADDED_V2: Permission[] = ["act.sign", "act.override", "issue.view", "issue.manage"];
 
 export type Permission = keyof typeof PERMISSIONS;
 
@@ -51,7 +58,8 @@ export const DEFAULT_ROLES: RoleTemplate[] = [
     permissions: [
       "project.view", "project.manage", "project.members", "estimate.import", "estimate.approve",
       "workitem.edit", "progress.update", "progress.confirmOverrun", "contract.view", "contract.edit",
-      "contract.verify", "act.view", "act.edit", "accounting.view", "document.download", "report.export", "audit.view",
+      "contract.verify", "act.view", "act.edit", "act.sign", "act.override", "accounting.view", "document.download", "report.export", "audit.view",
+      "issue.view", "issue.manage",
     ],
   },
   {
@@ -60,7 +68,7 @@ export const DEFAULT_ROLES: RoleTemplate[] = [
     description: "Сметы, объёмы, выполнение, АВР",
     permissions: [
       "project.view", "estimate.import", "workitem.edit", "progress.update", "contract.view", "contract.edit",
-      "act.view", "act.edit", "document.download", "report.export",
+      "act.view", "act.edit", "document.download", "report.export", "issue.view", "issue.manage",
     ],
   },
   {
@@ -69,14 +77,14 @@ export const DEFAULT_ROLES: RoleTemplate[] = [
     description: "Импорт 1С, классификация затрат, оплаты",
     permissions: [
       "project.view", "contract.view", "act.view", "accounting.view", "accounting.import", "accounting.classify",
-      "finance.settings", "document.download", "report.export",
+      "finance.settings", "document.download", "report.export", "issue.view", "issue.manage",
     ],
   },
   {
     code: "reviewer",
     name: "Проверяющий",
     description: "Просмотр всех данных и журнала, без изменений",
-    permissions: ["project.view", "contract.view", "act.view", "accounting.view", "document.download", "report.export", "audit.view"],
+    permissions: ["project.view", "contract.view", "act.view", "accounting.view", "document.download", "report.export", "audit.view", "issue.view"],
   },
   {
     code: "viewer",

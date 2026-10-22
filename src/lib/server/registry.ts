@@ -2,6 +2,7 @@ import "server-only";
 import { prisma } from "./db";
 import { dec, Num } from "@/lib/calc/decimal";
 import { computeRegistryRow, LEVEL_LABELS, RegistryRowResult, RowLevel } from "@/lib/calc/registryRow";
+import { effectiveActStatus, endOfDayUTC, isCostTransaction } from "@/lib/calc/rules";
 import { COVERAGE_LABELS, CoverageStatus, projectCoverage, ProjectCoverageResult } from "@/lib/calc/coverage";
 
 const s = (v: Num): string | null => (v === null ? null : v.toString());
@@ -82,21 +83,41 @@ export interface RegistryData {
   rows: RegistryRowDTO[];
   coverage: ProjectCoverageResult;
   computedAt: string;
+  /** Дата, на которую рассчитано состояние (null — текущее) */
+  asOf: string | null;
 }
 
 /**
  * Загрузка и расчёт реестра работ проекта. Все показатели вычисляются через computeRegistryRow.
  */
-export async function loadRegistry(projectId: string, opts: { workItemId?: string; today?: Date } = {}): Promise<RegistryData> {
-  const today = opts.today ?? new Date();
+export interface RegistryOptions {
+  workItemId?: string;
+  today?: Date;
+  /**
+   * Состояние на дату (YYYY-MM-DD) по датам документов: версия сметы, утверждённая к этой дате; выполнение,
+   * зафиксированное на эту дату; акты, подписанные к этой дате и не аннулированные/не заменённые к ней;
+   * операции 1С с датой не позднее. Текущие статусы договоров и классификация операций.
+   */
+  asOf?: string | null;
+}
+
+export async function loadRegistry(projectId: string, opts: RegistryOptions = {}): Promise<RegistryData> {
+  const asOf = opts.asOf ? endOfDayUTC(opts.asOf) : null;
+  const today = asOf ?? opts.today ?? new Date();
   const only = opts.workItemId;
   const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId } });
+  // Действующая версия на дату — последняя утверждённая не позднее этой даты
   const [current, baseline] = await Promise.all([
-    prisma.estimateVersion.findFirst({ where: { projectId, status: "ACTIVE" } }),
-    prisma.estimateVersion.findFirst({ where: { projectId, isBaseline: true } }),
+    asOf
+      ? prisma.estimateVersion.findFirst({
+          where: { projectId, status: { in: ["ACTIVE", "SUPERSEDED"] }, approvedAt: { lte: asOf } },
+          orderBy: { approvedAt: "desc" },
+        })
+      : prisma.estimateVersion.findFirst({ where: { projectId, status: "ACTIVE" } }),
+    prisma.estimateVersion.findFirst({ where: { projectId, isBaseline: true, ...(asOf ? { approvedAt: { lte: asOf } } : {}) } }),
   ]);
 
-  const [items, currentLines, baselineLines, progress, allocations, actLines, costAllocs] = await Promise.all([
+  const [items, currentLines, baselineLines, progress, allocations, actAllocs, costAllocs] = await Promise.all([
     prisma.workItem.findMany({
       where: { projectId, ...(only ? { id: only } : {}) },
       include: { object: true, stage: true, section: true },
@@ -104,9 +125,13 @@ export async function loadRegistry(projectId: string, opts: { workItemId?: strin
     }),
     current ? prisma.estimateLine.findMany({ where: { versionId: current.id, workItemId: only ?? { not: null } } }) : [],
     baseline ? prisma.estimateLine.findMany({ where: { versionId: baseline.id, workItemId: only ?? { not: null } } }) : [],
-    // Текущее значение выполнения — последняя запись истории по дате фиксации
+    // Текущее значение выполнения — последняя запись истории по дате фиксации (на дату — из известных к этой дате)
     prisma.workProgressRecord.findMany({
-      where: { workItem: { projectId }, ...(only ? { workItemId: only } : {}) },
+      where: {
+        workItem: { projectId },
+        ...(only ? { workItemId: only } : {}),
+        ...(asOf ? { asOfDate: { lte: asOf } } : {}),
+      },
       distinct: ["workItemId"],
       orderBy: [{ workItemId: "asc" }, { asOfDate: "desc" }, { createdAt: "desc" }],
     }),
@@ -114,13 +139,16 @@ export async function loadRegistry(projectId: string, opts: { workItemId?: strin
       where: { workItem: { projectId }, ...(only ? { workItemId: only } : {}) },
       include: { contract: { include: { contractor: true } } },
     }),
-    prisma.actLine.findMany({
-      where: { workItemId: only ?? { not: null }, act: { projectId } },
-      include: { act: { select: { status: true, currency: true } } },
+    prisma.actLineAllocation.findMany({
+      where: { ...(only ? { workItemId: only } : {}), actLine: { act: { projectId } } },
+      include: { actLine: { include: { act: { select: { status: true, currency: true, date: true, signedAt: true, annulledAt: true, correctedAt: true } } } } },
     }),
     prisma.transactionAllocation.findMany({
-      where: { workItemId: only ?? { not: null }, transaction: { projectId } },
-      include: { transaction: { select: { classification: true, currency: true } } },
+      where: {
+        workItemId: only ?? { not: null },
+        transaction: { projectId, ...(asOf ? { date: { lte: asOf } } : {}) },
+      },
+      include: { transaction: { select: { classification: true, category: true, currency: true, classifiedAt: true } } },
     }),
   ]);
 
@@ -139,7 +167,7 @@ export async function loadRegistry(projectId: string, opts: { workItemId?: strin
   const baseLineMap = new Map(baselineLines.map((l) => [l.workItemId!, l]));
   const progressMap = new Map(progress.map((p) => [p.workItemId, p]));
   const allocMap = byItem(allocations, (a) => a.workItemId);
-  const actMap = byItem(actLines, (a) => a.workItemId);
+  const actMap = byItem(actAllocs, (a) => a.workItemId);
   const costMap = byItem(costAllocs, (a) => a.workItemId);
 
   const rows: RegistryRowDTO[] = [];
@@ -171,10 +199,13 @@ export async function loadRegistry(projectId: string, opts: { workItemId?: strin
         quantity: dec(a.quantity),
         currency: a.contract.currency,
       })),
-      actLines: (actMap.get(it.id) ?? []).map((l) => ({ amount: dec(l.amount), status: l.act.status, currency: l.act.currency })),
+      actLines: (actMap.get(it.id) ?? []).flatMap((l) => {
+        const status = effectiveActStatus(l.actLine.act, asOf);
+        return status ? [{ amount: dec(l.amount), status, currency: l.actLine.act.currency }] : [];
+      }),
       costAllocations: (costMap.get(it.id) ?? []).map((c) => ({
         amount: dec(c.amount),
-        classified: c.transaction.classification === "CLASSIFIED",
+        classified: isCostTransaction(c.transaction),
         currency: c.transaction.currency,
       })),
       // Оплаты привязываются к договорам; на уровне статьи без распределения не показываются.
@@ -278,5 +309,6 @@ export async function loadRegistry(projectId: string, opts: { workItemId?: strin
     rows,
     coverage,
     computedAt: new Date().toISOString(),
+    asOf: opts.asOf ?? null,
   };
 }

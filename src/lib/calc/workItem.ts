@@ -217,7 +217,7 @@ export function earnedValue(input: {
 
 // ───────────── АВР (5.4) ─────────────
 
-export type ActStatus = "PREPARED" | "ON_APPROVAL" | "SIGNED" | "REJECTED";
+export type ActStatus = "DRAFT" | "ON_APPROVAL" | "SIGNED" | "REJECTED";
 
 export interface ActLineInput {
   amount: Num;
@@ -246,7 +246,7 @@ export function actsSummary(lines: ActLineInput[], currency: string): ActsResult
       continue;
     }
     if (l.status === "SIGNED") signed.push(l.amount);
-    else if (l.status === "PREPARED" || l.status === "ON_APPROVAL") pending.push(l.amount);
+    else if (l.status === "DRAFT" || l.status === "ON_APPROVAL") pending.push(l.amount);
   }
   return {
     accepted: sumKnown(signed).sum,
